@@ -1,0 +1,346 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Presenton MCP - Curated Tools",
+    "description": "Essential Presenton API endpoints for MCP chatbot integration",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:5000",
+      "description": "Local Presenton API"
+    }
+  ],
+  "paths": {
+    "/api/v1/ppt/presentation/all": {
+      "get": {
+        "operationId": "list_presentations",
+        "summary": "List all presentations",
+        "description": "Get a list of all available presentations with their IDs, titles, and metadata",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ppt/presentation/{id}": {
+      "get": {
+        "operationId": "get_presentation",
+        "summary": "Get presentation by ID",
+        "description": "Retrieve a specific presentation with all slides and content",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Presentation UUID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_presentation",
+        "summary": "Delete presentation",
+        "description": "Delete a presentation by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/v1/ppt/slide/edit": {
+      "post": {
+        "operationId": "edit_slide",
+        "summary": "Edit slide content with AI",
+        "description": "AI-powered slide editing using natural language prompts. Can modify text, add content, change layout, etc.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Slide UUID"
+                  },
+                  "prompt": {
+                    "type": "string",
+                    "description": "Natural language instruction for editing (e.g., 'Add 3 bullet points about AI benefits')"
+                  }
+                },
+                "required": ["id", "prompt"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response with updated slide",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ppt/slide/edit-html": {
+      "post": {
+        "operationId": "edit_slide_html",
+        "summary": "Edit slide HTML/styling with AI",
+        "description": "AI-powered HTML and CSS editing for slide styling and appearance",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Slide UUID"
+                  },
+                  "prompt": {
+                    "type": "string",
+                    "description": "Natural language instruction for styling (e.g., 'Make title 48px and bold')"
+                  },
+                  "html": {
+                    "type": "string",
+                    "description": "Optional HTML to modify (if not provided, uses slide's existing HTML)"
+                  }
+                },
+                "required": ["id", "prompt"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ppt/presentation/generate": {
+      "post": {
+        "operationId": "generate_presentation",
+        "summary": "Generate new presentation",
+        "description": "Create a new presentation from a topic using AI",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "topic": {
+                    "type": "string",
+                    "description": "Topic for the presentation"
+                  },
+                  "n_slides": {
+                    "type": "integer",
+                    "description": "Number of slides to generate",
+                    "default": 5
+                  },
+                  "language": {
+                    "type": "string",
+                    "description": "Language for the presentation",
+                    "default": "English"
+                  }
+                },
+                "required": ["topic"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ppt/presentation/export": {
+      "post": {
+        "operationId": "export_presentation",
+        "summary": "Export presentation",
+        "description": "Export presentation to PPTX or PDF format",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "presentation_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Presentation UUID"
+                  },
+                  "export_as": {
+                    "type": "string",
+                    "enum": ["pptx", "pdf"],
+                    "description": "Export format"
+                  }
+                },
+                "required": ["presentation_id", "export_as"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response with file path",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ppt/presentation/edit": {
+      "post": {
+        "operationId": "update_presentation_bulk",
+        "summary": "Update multiple slides at once",
+        "description": "Bulk update content across multiple slides (no AI, direct content replacement)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "presentation_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "slides": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "index": {
+                          "type": "integer"
+                        },
+                        "content": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  },
+                  "export_as": {
+                    "type": "string",
+                    "enum": ["pptx", "pdf"]
+                  }
+                },
+                "required": ["presentation_id", "slides", "export_as"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/v1/ppt/presentation/update": {
+      "patch": {
+        "operationId": "update_presentation_metadata",
+        "summary": "Update presentation metadata",
+        "description": "Update presentation properties like title, language, etc.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "language": {
+                    "type": "string"
+                  },
+                  "n_slides": {
+                    "type": "integer"
+                  }
+                },
+                "required": ["id"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    }
+  }
+}
