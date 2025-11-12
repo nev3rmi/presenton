@@ -7,16 +7,18 @@ import PresentationMode from "../../components/PresentationMode";
 import SidePanel from "./SidePanel";
 import SlideContent from "./SlideContent";
 import Header from "./Header";
+import SmartSuggestionsPanel from "./SmartSuggestionsPanel";
 import { Button } from "@/components/ui/button";
 import { usePathname } from "next/navigation";
 import { trackEvent, MixpanelEvent } from "@/utils/mixpanel";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle, Loader2, Lightbulb } from "lucide-react";
 import Help from "./Help";
 import {
   usePresentationStreaming,
   usePresentationData,
   usePresentationNavigation,
   useAutoSave,
+  useTextSelection,
 } from "../hooks";
 import { PresentationPageProps } from "../types";
 import LoadingState from "./LoadingState";
@@ -33,7 +35,18 @@ const PresentationPage: React.FC<PresentationPageProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [error, setError] = useState(false);
   const [isMobilePanelOpen, setIsMobilePanelOpen] = useState(false);
+  const [showSuggestionsPanel, setShowSuggestionsPanel] = useState(false);
   const {getCustomTemplateFonts} = useLayout();
+
+  // Text selection hook
+  const { selection, hasSelection, clearSelection } = useTextSelection();
+
+  // Auto-open suggestions panel when text is selected
+  useEffect(() => {
+    if (hasSelection) {
+      setShowSuggestionsPanel(true);
+    }
+  }, [hasSelection]);
  
   const { presentationData, isStreaming } = useSelector(
     (state: RootState) => state.presentationGeneration
@@ -131,6 +144,18 @@ const PresentationPage: React.FC<PresentationPageProps> = ({
       <Header presentation_id={presentation_id} currentSlide={selectedSlide} />
       <Help />
 
+      {/* Smart Suggestions Toggle Button (always visible on desktop) */}
+      {!showSuggestionsPanel && (
+        <button
+          onClick={() => setShowSuggestionsPanel(true)}
+          className="fixed right-6 bottom-20 z-50 hidden md:flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-full shadow-lg transition-all duration-300 hover:scale-105"
+          title="Open Smart Suggestions"
+        >
+          <Lightbulb className="w-5 h-5" />
+          <span className="text-sm font-medium">Suggestions</span>
+        </button>
+      )}
+
       <div
         style={{
           background: "#c8c7c9",
@@ -144,8 +169,8 @@ const PresentationPage: React.FC<PresentationPageProps> = ({
           isMobilePanelOpen={isMobilePanelOpen}
           setIsMobilePanelOpen={setIsMobilePanelOpen}
         />
-        
-        <div className="flex-1 h-[calc(100vh-100px)] overflow-y-auto">
+
+        <div className={`flex-1 h-[calc(100vh-100px)] overflow-y-auto ${showSuggestionsPanel ? 'mr-[320px]' : ''} transition-all duration-300`}>
           <div
             id="presentation-slides-wrapper"
             className="mx-auto flex flex-col items-center overflow-hidden justify-center p-2 sm:p-6 pt-0"
@@ -182,6 +207,21 @@ const PresentationPage: React.FC<PresentationPageProps> = ({
             )}
           </div>
         </div>
+
+        {/* Smart Suggestions Panel */}
+        {showSuggestionsPanel && (
+          <div className="fixed right-0 top-[72px] bottom-0 w-[320px] hidden md:block z-40">
+            <SmartSuggestionsPanel
+              selectedText={selection.text}
+              slideId={selection.slideId}
+              slideIndex={selection.slideIndex}
+              onClose={() => {
+                setShowSuggestionsPanel(false);
+                clearSelection();
+              }}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

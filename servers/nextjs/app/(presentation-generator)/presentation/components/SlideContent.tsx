@@ -145,6 +145,7 @@ const SlideContent = ({ slide, index, presentationId }: SlideContentProps) => {
         <div
           data-layout={slide.layout}
           data-group={slide.layout_group}
+          data-slide-id={slide.id}
           className={` w-full  group `}
         >
           {/* render slides */}
