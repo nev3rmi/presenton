@@ -128,12 +128,15 @@ async def process_old_and_new_slides_and_fetch_assets(
     # Use old icon url if query is same
     for new_icon in new_icon_dicts:
         if new_icon["__icon_query__"] in old_icon_queries:
-            old_icon_url = old_icon_dicts[
+            old_icon_dict = old_icon_dicts[
                 old_icon_queries.index(new_icon["__icon_query__"])
-            ]["__icon_url__"]
-            new_icon["__icon_url__"] = old_icon_url
-            new_icons_fetch_status.append(False)
-            continue
+            ]
+            # Check if old icon has URL before reusing it
+            if "__icon_url__" in old_icon_dict:
+                old_icon_url = old_icon_dict["__icon_url__"]
+                new_icon["__icon_url__"] = old_icon_url
+                new_icons_fetch_status.append(False)
+                continue
 
         async_icon_fetch_tasks.append(
             ICON_FINDER_SERVICE.search_icons(new_icon["__icon_query__"])
