@@ -20,6 +20,18 @@ import uuid
 SLIDE_ROUTER = APIRouter(prefix="/slide", tags=["Slide"])
 
 
+@SLIDE_ROUTER.get("/{slide_id}", response_model=SlideModel)
+async def get_slide(
+    slide_id: uuid.UUID,
+    sql_session: AsyncSession = Depends(get_async_session),
+):
+    """Get a single slide by ID"""
+    slide = await sql_session.get(SlideModel, slide_id)
+    if not slide:
+        raise HTTPException(status_code=404, detail="Slide not found")
+    return slide
+
+
 @SLIDE_ROUTER.post("/edit")
 async def edit_slide(
     id: Annotated[uuid.UUID, Body()],

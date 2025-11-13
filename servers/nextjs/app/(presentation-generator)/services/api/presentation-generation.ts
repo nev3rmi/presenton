@@ -153,6 +153,24 @@ export class PresentationGenerationApi {
     }
   }
 
+  static async getSlide(slide_id: string) {
+    try {
+      const response = await fetch(
+        `/api/v1/ppt/slide/${slide_id}`,
+        {
+          method: "GET",
+          headers: getHeader(),
+          cache: "no-cache",
+        }
+      );
+
+      return await ApiResponseHandler.handleResponse(response, "Failed to fetch slide");
+    } catch (error) {
+      console.error("error fetching slide", error);
+      throw error;
+    }
+  }
+
   static async generateLayoutVariants(
     html: string,
     block_type: string,

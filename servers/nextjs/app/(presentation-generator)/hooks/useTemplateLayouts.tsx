@@ -31,6 +31,43 @@ export const useTemplateLayouts = () => {
       // IMPORTANT: If slide has html_content (from layout variants), render from that
       // instead of the template-based JSON rendering. This ensures layout changes persist.
       if (slide.html_content && slide.html_content.trim()) {
+        if (isEditMode) {
+          return (
+            <EditableLayoutWrapper
+              slideIndex={slide.index}
+              slideData={slide.content}
+              properties={slide.properties}
+            >
+              <TiptapTextReplacer
+                key={slide.id}
+                slideData={slide.content}
+                slideIndex={slide.index}
+                onContentChange={(
+                  content: string,
+                  dataPath: string,
+                  slideIndex?: number
+                ) => {
+                  if (dataPath && slideIndex !== undefined) {
+                    dispatch(
+                      updateSlideContent({
+                        slideIndex: slideIndex,
+                        dataPath: dataPath,
+                        content: content,
+                      })
+                    );
+                  }
+                }}
+              >
+                <SlideErrorBoundary label={`Slide ${slide.index + 1}`}>
+                  <div
+                    className="w-full aspect-video"
+                    dangerouslySetInnerHTML={{ __html: slide.html_content }}
+                  />
+                </SlideErrorBoundary>
+              </TiptapTextReplacer>
+            </EditableLayoutWrapper>
+          );
+        }
         return (
           <SlideErrorBoundary label={`Slide ${slide.index + 1}`}>
             <div
