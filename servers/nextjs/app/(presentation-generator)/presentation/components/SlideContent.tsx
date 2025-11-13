@@ -96,15 +96,33 @@ const SlideContent = ({ slide, index, presentationId }: SlideContentProps) => {
 
     try {
       trackEvent(MixpanelEvent.Slide_Edit_API_Call);
-      const response = await PresentationGenerationApi.editSlide(
-        slide.id,
-        value
-      );
 
-      if (response) {
-        dispatch(updateSlide({ index: slide.index, slide: response }));
-        toast.success("Slide updated successfully");
-        setSelectedSuggestion(null); // Reset suggestion after applying
+      // Check if this is an HTML variant slide
+      if (slide.html_content && slide.html_content.trim()) {
+        // For HTML variant slides, edit the HTML directly
+        const response = await PresentationGenerationApi.editSlideHtml(
+          slide.id,
+          value,  // User's prompt from textarea
+          slide.html_content  // Current HTML content
+        );
+
+        if (response) {
+          dispatch(updateSlide({ index: slide.index, slide: response }));
+          toast.success("HTML slide updated successfully");
+          setSelectedSuggestion(null);
+        }
+      } else {
+        // For template-based slides, edit the JSON content
+        const response = await PresentationGenerationApi.editSlide(
+          slide.id,
+          value
+        );
+
+        if (response) {
+          dispatch(updateSlide({ index: slide.index, slide: response }));
+          toast.success("Slide updated successfully");
+          setSelectedSuggestion(null);
+        }
       }
     } catch (error: any) {
       console.error("Error in slide editing:", error);
@@ -127,6 +145,7 @@ const SlideContent = ({ slide, index, presentationId }: SlideContentProps) => {
       element.focus(); // Focus so user can immediately edit if needed
     }
   };
+
   const onDeleteSlide = async () => {
     try {
       trackEvent(MixpanelEvent.Slide_Delete_API_Call);

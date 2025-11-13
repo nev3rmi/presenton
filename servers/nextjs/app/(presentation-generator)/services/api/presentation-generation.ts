@@ -129,7 +129,8 @@ export class PresentationGenerationApi {
 
   static async editSlideHtml(
     slide_id: string,
-    html: string
+    prompt: string,
+    html?: string
   ) {
     try {
       const response = await fetch(
@@ -139,8 +140,8 @@ export class PresentationGenerationApi {
           headers: getHeader(),
           body: JSON.stringify({
             id: slide_id,
+            prompt,
             html,
-            prompt: "Update slide HTML with modified layout",
           }),
           cache: "no-cache",
         }
@@ -149,6 +150,31 @@ export class PresentationGenerationApi {
       return await ApiResponseHandler.handleResponse(response, "Failed to update slide HTML");
     } catch (error) {
       console.error("error in slide HTML update", error);
+      throw error;
+    }
+  }
+
+  static async saveHtmlVariant(
+    slide_id: string,
+    html_content: string
+  ) {
+    try {
+      const response = await fetch(
+        `/api/v1/ppt/slide/save-html-variant`,
+        {
+          method: "POST",
+          headers: getHeader(),
+          body: JSON.stringify({
+            id: slide_id,
+            html_content,
+          }),
+          cache: "no-cache",
+        }
+      );
+
+      return await ApiResponseHandler.handleResponse(response, "Failed to save HTML variant");
+    } catch (error) {
+      console.error("error in saving HTML variant", error);
       throw error;
     }
   }
