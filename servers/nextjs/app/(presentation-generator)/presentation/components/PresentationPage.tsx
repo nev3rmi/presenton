@@ -360,6 +360,7 @@ const PresentationPage: React.FC<PresentationPageProps> = ({
               slideId={selection.slideId || selectedBlock.slideId}
               slideIndex={selection.slideIndex ?? selectedBlock.slideIndex}
               selectedBlock={selectedBlock}
+              clearBlockSelection={clearBlockSelection}
               onClose={() => {
                 setShowSuggestionsPanel(false);
                 clearSelection();

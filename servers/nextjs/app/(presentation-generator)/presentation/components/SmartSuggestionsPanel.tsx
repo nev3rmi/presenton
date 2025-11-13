@@ -29,6 +29,7 @@ interface SmartSuggestionsPanelProps {
   slideIndex: number | null;
   selectedBlock?: BlockSelection;
   onClose: () => void;
+  clearBlockSelection?: () => void;
 }
 
 const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
@@ -37,10 +38,15 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
   slideIndex,
   selectedBlock,
   onClose,
+  clearBlockSelection,
 }) => {
   const dispatch = useDispatch();
   const [activeTab, setActiveTab] = useState<"suggestions" | "variants">("suggestions");
   const [applyingId, setApplyingId] = useState<string | null>(null);
+
+  // Track previous selection to detect changes
+  const [previousSelectedContent, setPreviousSelectedContent] = useState<string>('');
+  const [previousBlockElement, setPreviousBlockElement] = useState<HTMLElement | null>(null);
 
   // Variants state
   const [variants, setVariants] = useState<Variant[]>([]);
@@ -61,6 +67,38 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
   const { presentationData } = useSelector(
     (state: RootState) => state.presentationGeneration
   );
+
+  // Detect when selection changes and regenerate variants
+  useEffect(() => {
+    const currentContent = selectedText || selectedBlock?.content || '';
+    const currentElement = selectedBlock?.element || null;
+
+    // Check if the selected content or block element changed
+    const contentChanged = currentContent !== previousSelectedContent;
+    const elementChanged = currentElement !== previousBlockElement;
+
+    if (contentChanged || elementChanged) {
+      // Clear text variants when text selection changes
+      if (contentChanged && currentContent) {
+        setVariants([]);
+        setRegeneratedTextSlides([]);
+        setCurrentlyAppliedTextIndex(null);
+        setAppliedVariants(new Set());
+      }
+
+      // Clear layout variants when block selection changes
+      if (elementChanged && currentElement) {
+        setLayoutVariants([]);
+        setRegeneratedSlides([]);
+        setCurrentlyAppliedIndex(null);
+        setAppliedLayouts(new Set());
+      }
+
+      // Update tracking
+      setPreviousSelectedContent(currentContent);
+      setPreviousBlockElement(currentElement);
+    }
+  }, [selectedText, selectedBlock?.content, selectedBlock?.element, previousSelectedContent, previousBlockElement]);
 
   const handleGenerateVariants = useCallback(async () => {
     const textToVariate = selectedText || selectedBlock?.content || '';
@@ -315,13 +353,42 @@ ${JSON.stringify(currentSlide.content, null, 2)}
         setRegeneratedSlides(updatedCache);
       }
 
-      // Apply the slide
+      // Apply the slide (update JSON content)
       dispatch(updateSlide({ index: slideIndex, slide: slideToApply }));
+
+      // Wait for React to re-render the slide with new content
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // Automatically capture and save as HTML variant
+      try {
+        const slideElement = document.querySelector(`[data-slide-id="${slideToApply.id}"]`);
+
+        if (slideElement) {
+          const html_content = slideElement.innerHTML;
+
+          // Save the rendered HTML as variant
+          const htmlSlide = await PresentationGenerationApi.saveHtmlVariant(
+            slideToApply.id,
+            html_content
+          );
+
+          // Update Redux with HTML-enabled slide
+          dispatch(updateSlide({ index: slideIndex, slide: htmlSlide }));
+
+          console.log("Layout variant automatically saved as HTML");
+        } else {
+          console.warn("Could not find slide element to capture HTML");
+        }
+      } catch (htmlError) {
+        console.error("Error saving HTML variant:", htmlError);
+        // Don't fail the whole operation if HTML save fails
+        // The JSON variant is still applied successfully
+      }
 
       setCurrentlyAppliedIndex(variantIndex);
       setAppliedLayouts(prev => new Set(prev).add(variant.id));
 
-      toast.success(`Layout "${variant.title}" applied!`);
+      toast.success(`Layout "${variant.title}" applied as HTML variant!`);
     } catch (error) {
       toast.error("Failed to apply layout");
       console.error("Error applying layout:", error);
