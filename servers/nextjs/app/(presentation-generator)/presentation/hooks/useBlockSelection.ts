@@ -53,23 +53,18 @@ export function useBlockSelection() {
   const isSelectableElement = (element: HTMLElement): boolean => {
     const tag = element.tagName;
 
+    // Allow most common elements
     // Text elements
-    if (['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(tag)) return true;
+    if (['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'SPAN'].includes(tag)) return true;
 
-    // Structural containers
-    if (tag === 'SECTION' || tag === 'ARTICLE') return true;
+    // Container elements
+    if (['DIV', 'SECTION', 'ARTICLE', 'MAIN', 'HEADER', 'FOOTER', 'NAV', 'ASIDE'].includes(tag)) return true;
 
-    // Specific container types (not all divs)
-    if (tag === 'DIV') {
-      const classList = element.className;
-      // Only specific flex/grid containers
-      if (element.classList.contains('flex-1')) return true;
-      if (element.classList.contains('grid')) return true;
-      if (classList.includes('space-y-')) return true;
-      if (element.classList.contains('flex') &&
-          element.classList.contains('items-start') &&
-          classList.includes('space-x-')) return true;
-    }
+    // List elements
+    if (['UL', 'OL', 'LI'].includes(tag)) return true;
+
+    // Other content elements
+    if (['BLOCKQUOTE', 'PRE', 'CODE', 'FIGURE', 'FIGCAPTION'].includes(tag)) return true;
 
     return false;
   };
@@ -88,17 +83,34 @@ export function useBlockSelection() {
     if (tag === 'ul' || tag === 'ol') return 'list';
     if (tag === 'li') return 'list-item';
 
-    // Structural container types for layout modifications
-    if (element.classList.contains('grid')) return 'grid-container';
-    if (element.classList.contains('flex-1')) return 'column';
-    if (classList.includes('space-y-')) return 'list-container';
-    if (element.classList.contains('flex') &&
-        element.classList.contains('items-start') &&
-        classList.includes('space-x-')) return 'list-item';
+    // Code and preformatted
+    if (tag === 'pre') return 'preformatted';
+    if (tag === 'code') return 'code';
+    if (tag === 'blockquote') return 'blockquote';
 
+    // Figure elements
+    if (tag === 'figure') return 'figure';
+    if (tag === 'figcaption') return 'figcaption';
+
+    // Structural elements
     if (tag === 'section') return 'section';
     if (tag === 'article') return 'article';
-    if (tag === 'div') return 'container';
+    if (tag === 'main') return 'main';
+    if (tag === 'header') return 'header';
+    if (tag === 'footer') return 'footer';
+    if (tag === 'nav') return 'nav';
+    if (tag === 'aside') return 'aside';
+
+    // Div containers - check for specific classes
+    if (tag === 'div') {
+      if (element.classList.contains('grid')) return 'grid-container';
+      if (element.classList.contains('flex-1')) return 'column';
+      if (classList.includes('space-y-')) return 'list-container';
+      if (element.classList.contains('flex') &&
+          element.classList.contains('items-start') &&
+          classList.includes('space-x-')) return 'list-item';
+      return 'container';
+    }
 
     return 'block';
   };
@@ -222,35 +234,87 @@ export function useBlockSelection() {
       cleanupFunctionsRef.current.forEach(cleanup => cleanup());
       cleanupFunctionsRef.current = [];
 
-      // Find specific selectable elements inside slides
-      // Text elements: for text variant generation
-      // Containers: for layout modifications
+      // Find ALL selectable elements inside slides
+      // Universal selection - allow Ctrl+click on any element
+      // TEST: DIV is commented out - testing if it's the cause of render bugs
       const selectors = [
-        // Main content columns (flex containers with flex-1)
-        '[data-slide-id] > div > div.flex-1',
+        // ===== TEST GROUP 1: DIVS (COMMENTED OUT - Testing if this causes the bug) =====
+        // SELECTOR 1: All DIVs (containers, grids, flexboxes, etc.)
+        // '[data-slide-id] div',  // <-- KEPT COMMENTED OUT
 
-        // Grid containers (for grid layout modifications)
-        '[data-slide-id] div.grid[class*="gap-"]',
+        // ===== TEST GROUP 2: TEXT ELEMENTS =====
+        // SELECTOR 2: Paragraphs
+        '[data-slide-id] p',
 
-        // List containers with spacing
-        '[data-slide-id] div[class*="space-y-"]',
+        // SELECTOR 3: Heading 1
+        '[data-slide-id] h1',
 
-        // Individual list items
-        '[data-slide-id] div.flex.items-start[class*="space-x-"]',
+        // SELECTOR 4: Heading 2
+        '[data-slide-id] h2',
 
-        // Content sections
+        // SELECTOR 5: Heading 3
+        '[data-slide-id] h3',
+
+        // SELECTOR 6: Heading 4
+        '[data-slide-id] h4',
+
+        // SELECTOR 7: Heading 5
+        '[data-slide-id] h5',
+
+        // SELECTOR 8: Heading 6
+        '[data-slide-id] h6',
+
+        // ===== TEST GROUP 3: INLINE ELEMENTS =====
+        // SELECTOR 9: All SPANs (inline text)
+        '[data-slide-id] span',
+
+        // ===== TEST GROUP 4: STRUCTURAL ELEMENTS =====
+        // SELECTOR 10: Section elements
         '[data-slide-id] section',
+
+        // SELECTOR 11: Article elements
         '[data-slide-id] article',
 
-        // Text elements (for text variant generation)
-        // Now including elements inside TiptapText - click handler checks for Ctrl/Cmd
-        '[data-slide-id] p',
-        '[data-slide-id] h1',
-        '[data-slide-id] h2',
-        '[data-slide-id] h3',
-        '[data-slide-id] h4',
-        '[data-slide-id] h5',
-        '[data-slide-id] h6',
+        // SELECTOR 12: Main elements
+        '[data-slide-id] main',
+
+        // SELECTOR 13: Header elements
+        '[data-slide-id] header',
+
+        // SELECTOR 14: Footer elements
+        '[data-slide-id] footer',
+
+        // SELECTOR 15: Nav elements
+        '[data-slide-id] nav',
+
+        // SELECTOR 16: Aside elements
+        '[data-slide-id] aside',
+
+        // ===== TEST GROUP 5: LIST ELEMENTS =====
+        // SELECTOR 17: Unordered lists (ul)
+        '[data-slide-id] ul',
+
+        // SELECTOR 18: Ordered lists (ol)
+        '[data-slide-id] ol',
+
+        // SELECTOR 19: List items (li)
+        '[data-slide-id] li',
+
+        // ===== TEST GROUP 6: OTHER CONTENT ELEMENTS =====
+        // SELECTOR 20: Blockquote elements
+        '[data-slide-id] blockquote',
+
+        // SELECTOR 21: Preformatted text (pre)
+        '[data-slide-id] pre',
+
+        // SELECTOR 22: Code elements
+        '[data-slide-id] code',
+
+        // SELECTOR 23: Figure elements
+        '[data-slide-id] figure',
+
+        // SELECTOR 24: Figure caption
+        '[data-slide-id] figcaption',
       ];
 
       const blocks = document.querySelectorAll(selectors.join(', '));
