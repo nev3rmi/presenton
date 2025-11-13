@@ -148,11 +148,11 @@ const PresentationPage: React.FC<PresentationPageProps> = ({
       {!showSuggestionsPanel && (
         <button
           onClick={() => setShowSuggestionsPanel(true)}
-          className="fixed right-6 bottom-20 z-50 hidden md:flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-full shadow-lg transition-all duration-300 hover:scale-105"
-          title="Open Smart Suggestions"
+          className="fixed right-6 bottom-20 z-50 hidden md:flex h-12 w-12 items-center justify-center bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg transition-all duration-300 hover:shadow-xl"
+          title="Smart Suggestions"
+          aria-label="Smart Suggestions"
         >
           <Lightbulb className="w-5 h-5" />
-          <span className="text-sm font-medium">Suggestions</span>
         </button>
       )}
 
