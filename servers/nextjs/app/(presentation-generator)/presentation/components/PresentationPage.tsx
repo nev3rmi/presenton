@@ -283,7 +283,10 @@ const PresentationPage: React.FC<PresentationPageProps> = ({
           setIsMobilePanelOpen={setIsMobilePanelOpen}
         />
         
-        <div className="flex-1 h-[calc(100vh-100px)] overflow-y-auto">
+        <div className="flex-1 h-[calc(100vh-100px)] overflow-y-auto scroll-smooth snap-y snap-mandatory pr-2" style={{
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#9CA3AF #F3F4F6'
+        }}>
           <div
             id="presentation-slides-wrapper"
             className="mx-auto flex flex-col items-center overflow-hidden justify-center p-2 sm:p-6 pt-0"
@@ -321,9 +324,9 @@ const PresentationPage: React.FC<PresentationPageProps> = ({
           </div>
         </div>
 
-        {/* Smart Suggestions Panel */}
+        {/* Smart Suggestions Panel - matches SidePanel dimensions */}
         {showSuggestionsPanel && (hasSelection || hasBlockSelection) && (
-          <div className="w-80 h-[calc(100vh-100px)] overflow-hidden">
+          <div className="min-w-[300px] max-w-[300px] h-[calc(100vh-120px)] overflow-hidden z-30 relative">
             <SmartSuggestionsPanel
               selectedText={selection.text}
               slideId={selection.slideId || selectedBlock.slideId}
