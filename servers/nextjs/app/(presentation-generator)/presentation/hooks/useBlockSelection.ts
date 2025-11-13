@@ -238,9 +238,26 @@ export function useBlockSelection() {
       // Universal selection - allow Ctrl+click on any element
       // TEST: DIV is commented out - testing if it's the cause of render bugs
       const selectors = [
-        // ===== TEST GROUP 1: DIVS (COMMENTED OUT - Testing if this causes the bug) =====
-        // SELECTOR 1: All DIVs (containers, grids, flexboxes, etc.)
-        // '[data-slide-id] div',  // <-- KEPT COMMENTED OUT
+        // ===== TEST GROUP 1: DIVS (Selective - only meaningful containers) =====
+        // SELECTOR 1a: Main slide content container
+        '[data-slide-id]',
+
+        // SELECTOR 1b: Direct children of slide container (main layout divs)
+        '[data-slide-id] > div',
+
+        // SELECTOR 1c: Grid containers (layout divs)
+        '[data-slide-id] div.grid',
+
+        // SELECTOR 1d: Flex containers with flex-1 (column divs)
+        '[data-slide-id] div.flex-1',
+
+        // SELECTOR 1e: List containers (vertical spacing)
+        '[data-slide-id] div[class*="space-y-"]',
+
+        // SELECTOR 1f: Horizontal flex containers (list items)
+        '[data-slide-id] div.flex.items-start[class*="space-x-"]',
+
+        // NOTE: We don't select ALL divs anymore - too many elements causes performance issues
 
         // ===== TEST GROUP 2: TEXT ELEMENTS =====
         // SELECTOR 2: Paragraphs
