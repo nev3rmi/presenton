@@ -48,16 +48,15 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
   const [appliedVariants, setAppliedVariants] = useState<Set<string>>(new Set());
   const [originalText, setOriginalText] = useState<string>(''); // Store original text for replacements
   const [originalSlideContent, setOriginalSlideContent] = useState<any>(null); // Store original slide state
-  const [regeneratedTextSlides, setRegeneratedTextSlides] = useState<any[]>([]); // Pre-generated variant slides
+  const [regeneratedTextSlides, setRegeneratedTextSlides] = useState<any[]>([]); // Cache for generated variant slides
   const [currentlyAppliedTextIndex, setCurrentlyAppliedTextIndex] = useState<number | null>(null);
 
   // Layout variants state
   const [layoutVariants, setLayoutVariants] = useState<LayoutVariant[]>([]);
   const [isGeneratingLayouts, setIsGeneratingLayouts] = useState(false);
   const [appliedLayouts, setAppliedLayouts] = useState<Set<string>>(new Set());
-  const [regeneratedSlides, setRegeneratedSlides] = useState<any[]>([]);
+  const [regeneratedSlides, setRegeneratedSlides] = useState<any[]>([]); // Cache for generated layout slides
   const [currentlyAppliedIndex, setCurrentlyAppliedIndex] = useState<number | null>(null);
-  const [isRegenerating, setIsRegenerating] = useState(false);
 
   const { presentationData } = useSelector(
     (state: RootState) => state.presentationGeneration
@@ -79,7 +78,7 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
 
     setIsGeneratingVariants(true);
     setVariants([]);
-    setRegeneratedTextSlides([]);
+    setRegeneratedTextSlides([]); // Clear cache
     setCurrentlyAppliedTextIndex(null);
     setOriginalText(textToVariate);
     setAppliedVariants(new Set());
@@ -93,53 +92,7 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
           text,
         }));
         setVariants(variantsWithIds);
-        toast.success("Text variants generated! Preparing slides...");
-
-        // Pre-generate all slide versions sequentially
-        const regeneratedSlides: any[] = [];
-
-        try {
-          for (let i = 0; i < variantsWithIds.length; i++) {
-            const variant = variantsWithIds[i];
-            toast.info(`Preparing variant ${i + 1}/${variantsWithIds.length}...`);
-
-            try {
-              // First, restore the original slide to the database
-              if (originalSlideContent && presentationData?.id) {
-                const updatedSlides = [...presentationData.slides];
-                updatedSlides[slideIndex!] = originalSlideContent;
-
-                await PresentationGenerationApi.updatePresentationContent({
-                  id: presentationData.id,
-                  slides: updatedSlides
-                });
-
-                // Give the database a moment to update
-                await new Promise(resolve => setTimeout(resolve, 100));
-              }
-
-              // Now generate the variant from the original
-              const prompt = `Replace the text "${textToVariate}" with this alternative version: "${variant.text}". Keep everything else on the slide unchanged.`;
-              const regeneratedSlide = await PresentationGenerationApi.editSlide(slideId, prompt);
-              regeneratedSlides.push(regeneratedSlide);
-              setRegeneratedTextSlides([...regeneratedSlides]);
-            } catch (error: any) {
-              console.error(`Error generating variant ${i + 1}:`, error);
-              regeneratedSlides.push(null);
-              toast.error(`Variant ${i + 1} failed to prepare`);
-            }
-          }
-
-          const successCount = regeneratedSlides.filter(s => s !== null).length;
-          if (successCount > 0) {
-            toast.success(`${successCount} variant${successCount > 1 ? 's' : ''} ready to apply!`);
-          } else {
-            toast.error("All variants failed to prepare. Please try again.");
-          }
-        } catch (error: any) {
-          console.error("Error pre-generating slides:", error);
-          toast.error("Failed to prepare variants");
-        }
+        toast.success(`${variantsWithIds.length} text variants generated!`);
       }
     } catch (error: any) {
       console.error("Error generating variants:", error);
@@ -162,31 +115,65 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
 
   // Auto-generate layout variants when a block is selected
   useEffect(() => {
-    if (selectedBlock?.element && activeTab === "variants" && layoutVariants.length === 0 && !isGeneratingLayouts && !isRegenerating) {
+    if (selectedBlock?.element && activeTab === "variants" && layoutVariants.length === 0 && !isGeneratingLayouts) {
       handleGenerateLayoutVariants();
     }
-  }, [selectedBlock?.element, activeTab, layoutVariants.length, isGeneratingLayouts, isRegenerating]);
+  }, [selectedBlock?.element, activeTab, layoutVariants.length, isGeneratingLayouts]);
 
-  const applyVariant = (variant: Variant, variantIndex: number) => {
+  const applyVariant = async (variant: Variant, variantIndex: number) => {
     if (!slideId || slideIndex === null) {
       toast.error("Could not identify the slide. Please try again.");
       return;
     }
 
-    // Check if slide version is ready
-    if (!regeneratedTextSlides[variantIndex]) {
-      toast.error("This variant is still being prepared. Please wait...");
-      return;
+    // Set applying state to disable all actions
+    setApplyingId(variant.id);
+
+    try {
+      let slideToApply = regeneratedTextSlides[variantIndex];
+
+      // If not cached, generate it now
+      if (!slideToApply) {
+        toast.info("Generating slide...");
+
+        // Restore original slide to database first
+        if (originalSlideContent && presentationData?.id) {
+          const updatedSlides = [...presentationData.slides];
+          updatedSlides[slideIndex] = originalSlideContent;
+
+          await PresentationGenerationApi.updatePresentationContent({
+            id: presentationData.id,
+            slides: updatedSlides
+          });
+
+          // Give the database a moment to update
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        // Generate the slide with this variant
+        const prompt = `Replace the text "${originalText}" with this alternative version: "${variant.text}". Keep everything else on the slide unchanged.`;
+        slideToApply = await PresentationGenerationApi.editSlide(slideId, prompt);
+
+        // Cache it for future use
+        const updatedCache = [...regeneratedTextSlides];
+        updatedCache[variantIndex] = slideToApply;
+        setRegeneratedTextSlides(updatedCache);
+      }
+
+      // Apply the slide
+      dispatch(updateSlide({ index: slideIndex, slide: slideToApply }));
+
+      setCurrentlyAppliedTextIndex(variantIndex);
+      setAppliedVariants(new Set([variant.id]));
+
+      toast.success("Variant applied!");
+    } catch (error) {
+      toast.error("Failed to apply variant");
+      console.error("Error applying variant:", error);
+    } finally {
+      // Clear applying state to re-enable actions
+      setApplyingId(null);
     }
-
-    // Apply pre-generated slide instantly
-    const selectedSlide = regeneratedTextSlides[variantIndex];
-    dispatch(updateSlide({ index: slideIndex, slide: selectedSlide }));
-
-    setCurrentlyAppliedTextIndex(variantIndex);
-    setAppliedVariants(new Set([variant.id]));
-
-    toast.success(`Variant ${variantIndex + 1} applied!`);
   };
 
   const buildRegeneratedSlide = async (variant: LayoutVariant) => {
@@ -231,7 +218,7 @@ ${JSON.stringify(currentSlide.content, null, 2)}
 
     setIsGeneratingLayouts(true);
     setLayoutVariants([]);
-    setRegeneratedSlides([]);
+    setRegeneratedSlides([]); // Clear cache
     setCurrentlyAppliedIndex(null);
 
     try {
@@ -292,42 +279,7 @@ ${JSON.stringify(currentSlide.content, null, 2)}
           html: variant.html,
         }));
         setLayoutVariants(variantsWithIds);
-        toast.success("Layout variants generated! Preparing options...");
-
-        // Pre-generate all slide versions sequentially (to avoid API rate limits)
-        setIsRegenerating(true);
-        const regeneratedSlides: any[] = [];
-
-        try {
-          for (let i = 0; i < variantsWithIds.length; i++) {
-            const variant = variantsWithIds[i];
-            toast.info(`Preparing layout ${i + 1}/${variantsWithIds.length}...`);
-
-            try {
-              const regeneratedSlide = await buildRegeneratedSlide(variant);
-              regeneratedSlides.push(regeneratedSlide);
-              setRegeneratedSlides([...regeneratedSlides]); // Update state incrementally
-            } catch (error: any) {
-              console.error(`Error generating variant ${i + 1}:`, error);
-              regeneratedSlides.push(null); // Placeholder for failed variant
-              toast.error(`Layout ${i + 1} failed to prepare`);
-            }
-          }
-
-          const successCount = regeneratedSlides.filter(s => s !== null).length;
-          if (successCount > 0) {
-            toast.success(`${successCount} layout option${successCount > 1 ? 's' : ''} ready!`);
-          } else {
-            toast.error("All layouts failed to prepare. Please try again.");
-          }
-        } catch (error: any) {
-          console.error("Error pre-generating slides:", error);
-          toast.error("Failed to prepare layouts", {
-            description: error.message || "Please try again.",
-          });
-        } finally {
-          setIsRegenerating(false);
-        }
+        toast.success(`${variantsWithIds.length} layout variants generated!`);
       }
     } catch (error: any) {
       console.error("Error generating layout variants:", error);
@@ -339,26 +291,44 @@ ${JSON.stringify(currentSlide.content, null, 2)}
     }
   };
 
-  const applyLayoutVariant = (variant: LayoutVariant, variantIndex: number) => {
+  const applyLayoutVariant = async (variant: LayoutVariant, variantIndex: number) => {
     if (!slideId || slideIndex === null) {
       toast.error("Could not identify the slide. Please try again.");
       return;
     }
 
-    // Check if slide version is ready
-    if (!regeneratedSlides[variantIndex]) {
-      toast.error("This layout is still being prepared. Please wait...");
-      return;
+    // Set applying state to disable all actions
+    setApplyingId(variant.id);
+
+    try {
+      let slideToApply = regeneratedSlides[variantIndex];
+
+      // If not cached, generate it now
+      if (!slideToApply) {
+        toast.info("Generating layout...");
+
+        slideToApply = await buildRegeneratedSlide(variant);
+
+        // Cache it for future use
+        const updatedCache = [...regeneratedSlides];
+        updatedCache[variantIndex] = slideToApply;
+        setRegeneratedSlides(updatedCache);
+      }
+
+      // Apply the slide
+      dispatch(updateSlide({ index: slideIndex, slide: slideToApply }));
+
+      setCurrentlyAppliedIndex(variantIndex);
+      setAppliedLayouts(prev => new Set(prev).add(variant.id));
+
+      toast.success(`Layout "${variant.title}" applied!`);
+    } catch (error) {
+      toast.error("Failed to apply layout");
+      console.error("Error applying layout:", error);
+    } finally {
+      // Clear applying state to re-enable actions
+      setApplyingId(null);
     }
-
-    // Apply pre-generated slide instantly
-    const selectedSlide = regeneratedSlides[variantIndex];
-    dispatch(updateSlide({ index: slideIndex, slide: selectedSlide }));
-
-    setCurrentlyAppliedIndex(variantIndex);
-    setAppliedLayouts(prev => new Set(prev).add(variant.id));
-
-    toast.success(`Layout "${variant.title}" applied!`);
   };
 
   const handleSaveAndClose = () => {
@@ -385,7 +355,8 @@ ${JSON.stringify(currentSlide.content, null, 2)}
         </div>
         <button
           onClick={onClose}
-          className="p-1 hover:bg-gray-100 rounded transition-colors"
+          disabled={applyingId !== null}
+          className="p-1 hover:bg-gray-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <X className="w-5 h-5 text-gray-500" />
         </button>
@@ -413,11 +384,11 @@ ${JSON.stringify(currentSlide.content, null, 2)}
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "suggestions" | "variants")} className="flex-1 flex flex-col overflow-hidden">
         <TabsList className="w-full rounded-none border-b flex-shrink-0">
-          <TabsTrigger value="suggestions" className="flex-1 gap-2">
+          <TabsTrigger value="suggestions" className="flex-1 gap-2" disabled={applyingId !== null}>
             <Wand2 className="w-4 h-4" />
             Suggestions
           </TabsTrigger>
-          <TabsTrigger value="variants" className="flex-1 gap-2" disabled={!selectedBlock?.element}>
+          <TabsTrigger value="variants" className="flex-1 gap-2" disabled={!selectedBlock?.element || applyingId !== null}>
             <Palette className="w-4 h-4" />
             Variants
           </TabsTrigger>
@@ -467,7 +438,7 @@ ${JSON.stringify(currentSlide.content, null, 2)}
                       onClick={handleGenerateVariants}
                       variant="outline"
                       size="sm"
-                      disabled={isGeneratingVariants}
+                      disabled={isGeneratingVariants || applyingId !== null}
                     >
                       Regenerate
                     </Button>
@@ -480,8 +451,6 @@ ${JSON.stringify(currentSlide.content, null, 2)}
                         index={index}
                         isApplying={applyingId === variant.id}
                         isApplied={currentlyAppliedTextIndex === index}
-                        isReady={!!regeneratedTextSlides[index]}
-                        isRegenerating={isGeneratingVariants}
                         onApply={() => applyVariant(variant, index)}
                       />
                     ))}
@@ -502,6 +471,7 @@ ${JSON.stringify(currentSlide.content, null, 2)}
                         variant="outline"
                         size="sm"
                         className="w-full"
+                        disabled={applyingId !== null}
                       >
                         Restore Original
                       </Button>
@@ -562,7 +532,7 @@ ${JSON.stringify(currentSlide.content, null, 2)}
                       onClick={handleGenerateLayoutVariants}
                       variant="outline"
                       size="sm"
-                      disabled={isGeneratingLayouts}
+                      disabled={isGeneratingLayouts || applyingId !== null}
                     >
                       Regenerate
                     </Button>
@@ -575,9 +545,7 @@ ${JSON.stringify(currentSlide.content, null, 2)}
                         index={index}
                         isApplying={applyingId === variant.id}
                         isApplied={appliedLayouts.has(variant.id)}
-                        isReady={!!regeneratedSlides[index]}
                         isCurrentlyApplied={currentlyAppliedIndex === index}
-                        isRegenerating={isRegenerating}
                         onApply={() => applyLayoutVariant(variant, index)}
                       />
                     ))}
@@ -591,6 +559,7 @@ ${JSON.stringify(currentSlide.content, null, 2)}
                         className="w-full"
                         size="lg"
                         variant="default"
+                        disabled={applyingId !== null}
                       >
                         <CheckCircle2 className="w-4 h-4 mr-2" />
                         Done - Save Layout
@@ -612,8 +581,6 @@ interface VariantCardProps {
   index: number;
   isApplying: boolean;
   isApplied: boolean;
-  isReady: boolean;
-  isRegenerating: boolean;
   onApply: () => void;
 }
 
@@ -622,8 +589,6 @@ const VariantCard: React.FC<VariantCardProps> = ({
   index,
   isApplying,
   isApplied,
-  isReady,
-  isRegenerating,
   onApply,
 }) => {
   return (
@@ -648,14 +613,14 @@ const VariantCard: React.FC<VariantCardProps> = ({
       <Button
         size="sm"
         onClick={onApply}
-        disabled={!isReady || isRegenerating}
+        disabled={isApplying}
         className="w-full"
         variant={isApplied ? "outline" : "default"}
       >
-        {!isReady ? (
+        {isApplying ? (
           <>
             <Loader2 className="w-3 h-3 animate-spin mr-2" />
-            Preparing...
+            Applying...
           </>
         ) : isApplied ? (
           <>
@@ -675,9 +640,7 @@ interface LayoutVariantCardProps {
   index: number;
   isApplying: boolean;
   isApplied: boolean;
-  isReady: boolean;
   isCurrentlyApplied: boolean;
-  isRegenerating: boolean;
   onApply: () => void;
 }
 
@@ -686,9 +649,7 @@ const LayoutVariantCard: React.FC<LayoutVariantCardProps> = ({
   index,
   isApplying,
   isApplied,
-  isReady,
   isCurrentlyApplied,
-  isRegenerating,
   onApply,
 }) => {
   return (
@@ -740,14 +701,14 @@ const LayoutVariantCard: React.FC<LayoutVariantCardProps> = ({
         <Button
           size="sm"
           onClick={onApply}
-          disabled={!isReady || isRegenerating}
+          disabled={isApplying}
           className="w-full"
           variant={isCurrentlyApplied ? "outline" : "default"}
         >
-          {!isReady ? (
+          {isApplying ? (
             <>
               <Loader2 className="w-3 h-3 animate-spin mr-2" />
-              Preparing...
+              Applying...
             </>
           ) : isCurrentlyApplied ? (
             <>

@@ -187,3 +187,41 @@ async def get_layout_variants(
     )
 
     return {"variants": [v.model_dump() for v in variants]}
+
+
+@SLIDE_ROUTER.post("/save-html-variant", response_model=SlideModel)
+async def save_html_variant(
+    id: Annotated[uuid.UUID, Body()],
+    html_content: Annotated[str, Body()],
+    sql_session: AsyncSession = Depends(get_async_session),
+):
+    """
+    Save custom HTML variant for a slide.
+
+    This endpoint allows saving a rendered HTML version of the slide that will
+    be displayed instead of the template-based JSON rendering. This enables
+    custom layouts while keeping the JSON content intact.
+
+    Args:
+        id: UUID of the slide to update
+        html_content: The HTML content to save (rendered from frontend)
+
+    Returns:
+        Updated slide with new ID and html_content set
+    """
+    slide = await sql_session.get(SlideModel, id)
+    if not slide:
+        raise HTTPException(status_code=404, detail="Slide not found")
+
+    if not html_content or not html_content.strip():
+        raise HTTPException(status_code=400, detail="HTML content cannot be empty")
+
+    # Always assign a new unique id to the slide
+    # This ensures that the frontend can track slide updates
+    slide.id = uuid.uuid4()
+
+    sql_session.add(slide)
+    slide.html_content = html_content
+    await sql_session.commit()
+
+    return slide
