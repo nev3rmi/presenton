@@ -261,6 +261,37 @@ thead {
   scrollbar-color: #d1d5db #f9fafb;
 }
 
+/* Presentation slides scrollbar - thinner and more subtle */
+.presentation-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.presentation-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #9ca3af;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.presentation-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: #6b7280;
+}
+
+.presentation-scrollbar::-webkit-scrollbar-track {
+  background-color: #f3f4f6;
+  border-radius: 10px;
+}
+
+.presentation-scrollbar::-webkit-scrollbar-corner {
+  background-color: transparent;
+}
+
+/* Scroll indicator gradient - subtle fade to show more content below */
+.scroll-indicator-gradient {
+  background: linear-gradient(to top, rgba(200, 199, 201, 0.7), transparent);
+  transition: opacity 0.3s ease;
+}
+
 
 /* word animation */
 

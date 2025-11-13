@@ -38,6 +38,7 @@ const PresentationPage: React.FC<PresentationPageProps> = ({
   const [isMobilePanelOpen, setIsMobilePanelOpen] = useState(false);
   const [showSuggestionsPanel, setShowSuggestionsPanel] = useState(false);
   const [isSelectionModeActive, setIsSelectionModeActive] = useState(false);
+  const [showScrollIndicator, setShowScrollIndicator] = useState(true);
   const {getCustomTemplateFonts} = useLayout();
 
   // Text selection hook
@@ -221,13 +222,38 @@ const PresentationPage: React.FC<PresentationPageProps> = ({
 
 
   useEffect(() => {
-    if(!loading && !isStreaming && presentationData?.slides && presentationData?.slides.length > 0){  
+    if(!loading && !isStreaming && presentationData?.slides && presentationData?.slides.length > 0){
       const presentation_id = presentationData?.slides[0].layout.split(":")[0].split("custom-")[1];
     const fonts = getCustomTemplateFonts(presentation_id);
-  
+
     useFontLoader(fonts || []);
   }
   }, [presentationData,loading,isStreaming]);
+
+  // Handle scroll indicator visibility
+  useEffect(() => {
+    const scrollContainer = document.querySelector('.hide-scrollbar');
+    if (!scrollContainer) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+      // Show indicator if not at bottom (with 20px threshold)
+      setShowScrollIndicator(scrollTop + clientHeight < scrollHeight - 20);
+    };
+
+    // Check initially
+    handleScroll();
+
+    scrollContainer.addEventListener('scroll', handleScroll);
+    // Also check on window resize
+    window.addEventListener('resize', handleScroll);
+
+    return () => {
+      scrollContainer.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleScroll);
+    };
+  }, [presentationData?.slides]);
+
   // Presentation Mode View
   if (isPresentMode) {
     return (
@@ -283,10 +309,12 @@ const PresentationPage: React.FC<PresentationPageProps> = ({
           setIsMobilePanelOpen={setIsMobilePanelOpen}
         />
         
-        <div className="flex-1 h-[calc(100vh-100px)] overflow-y-auto scroll-smooth snap-y snap-mandatory pr-2" style={{
-          scrollbarWidth: 'thin',
-          scrollbarColor: '#9CA3AF #F3F4F6'
-        }}>
+        <div className="flex-1 h-[calc(100vh-100px)] overflow-y-auto scroll-smooth snap-y snap-proximity hide-scrollbar relative">
+          {/* Scroll indicator gradient - shows when there's more content below */}
+          {showScrollIndicator && (
+            <div className="scroll-indicator-gradient absolute bottom-0 left-0 right-0 h-20 pointer-events-none z-10" />
+          )}
+
           <div
             id="presentation-slides-wrapper"
             className="mx-auto flex flex-col items-center overflow-hidden justify-center p-2 sm:p-6 pt-0"
