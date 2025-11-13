@@ -49,15 +49,48 @@ export function useBlockSelection() {
     return false;
   };
 
-  // Get block type from element
+  // Check if element is a valid structural container
+  const isStructuralContainer = (element: HTMLElement): boolean => {
+    // Must have children (not just text)
+    if (element.children.length === 0) return false;
+
+    // Grid containers are structural
+    if (element.classList.contains('grid')) return true;
+
+    // Flex containers with flex-1 (main columns) are structural
+    if (element.classList.contains('flex-1')) return true;
+
+    // Elements with vertical spacing (list containers) are structural
+    const classList = element.className;
+    if (classList.includes('space-y-')) return true;
+
+    // Individual list items (flex with items-start and space-x-) are structural
+    if (element.classList.contains('flex') &&
+        element.classList.contains('items-start') &&
+        classList.includes('space-x-')) return true;
+
+    // Section/article elements are structural
+    if (element.tagName === 'SECTION' || element.tagName === 'ARTICLE') return true;
+
+    return false;
+  };
+
+  // Get block type from element (for structural containers)
   const getBlockType = (element: HTMLElement): string => {
     const tag = element.tagName.toLowerCase();
+    const classList = element.className;
 
-    if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) return 'heading';
-    if (tag === 'p') return 'paragraph';
-    if (['ul', 'ol'].includes(tag)) return 'list';
-    if (tag === 'blockquote') return 'blockquote';
-    if (tag === 'div') return 'section';
+    // Structural container types for layout modifications
+    if (element.classList.contains('grid')) return 'grid-container';
+    if (element.classList.contains('flex-1')) return 'column';
+    if (classList.includes('space-y-')) return 'list-container';
+    if (element.classList.contains('flex') &&
+        element.classList.contains('items-start') &&
+        classList.includes('space-x-')) return 'list-item';
+
+    if (tag === 'section') return 'section';
+    if (tag === 'article') return 'article';
+    if (tag === 'div') return 'container';
 
     return 'block';
   };
@@ -99,7 +132,8 @@ export function useBlockSelection() {
       return;
     }
 
-    // Only stop propagation, don't prevent default (which blocks text selection)
+    // Prevent text selection when selecting structural containers
+    e.preventDefault();
     e.stopPropagation();
 
     const { slideId, slideIndex } = getSlideInfo(element);
@@ -170,21 +204,24 @@ export function useBlockSelection() {
       cleanupFunctionsRef.current.forEach(cleanup => cleanup());
       cleanupFunctionsRef.current = [];
 
-      // Find all potential editable blocks
+      // Find all structural containers (for layout modifications via Edit HTML API)
+      // Target: columns, grids, list containers, sections - NOT individual text elements
       const selectors = [
-        '[data-slide-id] h1',
-        '[data-slide-id] h2',
-        '[data-slide-id] h3',
-        '[data-slide-id] h4',
-        '[data-slide-id] h5',
-        '[data-slide-id] h6',
-        '[data-slide-id] p',
-        '[data-slide-id] ul',
-        '[data-slide-id] ol',
-        '[data-slide-id] blockquote',
-        '[data-slide-id] div[class*="content"]',
-        '[data-slide-id] div[class*="description"]',
-        '[data-slide-id] div[class*="title"]',
+        // Main content columns (flex containers with flex-1)
+        '[data-slide-id] > div > div.flex-1',
+
+        // Grid containers (for grid layout modifications)
+        '[data-slide-id] div.grid[class*="gap-"]',
+
+        // List containers with spacing (for list layout modifications)
+        '[data-slide-id] div[class*="space-y-"]',
+
+        // Individual list items (for item-level modifications)
+        '[data-slide-id] div.flex.items-start[class*="space-x-"]',
+
+        // Content sections with padding/spacing
+        '[data-slide-id] section',
+        '[data-slide-id] article',
       ];
 
       const blocks = document.querySelectorAll(selectors.join(', '));
@@ -201,6 +238,12 @@ export function useBlockSelection() {
         // Skip if this IS a TiptapText editor itself
         // But allow parent containers that CONTAIN TiptapText to be selectable
         if (element.closest('.tiptap-text-editor')) {
+          return;
+        }
+
+        // IMPORTANT: Only make structural containers selectable
+        // This ensures we select layout elements for Edit HTML API, not text elements
+        if (!isStructuralContainer(element)) {
           return;
         }
 
