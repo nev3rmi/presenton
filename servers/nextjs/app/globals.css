@@ -106,32 +106,47 @@ strong {
   position: relative;
 }
 
-/* Selection mode - only change cursor when Ctrl/Cmd is pressed */
-/* NO outline by default - keeps text readable */
+/* Selection mode - Show ALL possible elements when Ctrl/Cmd is pressed */
 body.block-selection-mode .block-hoverable {
   cursor: pointer;
   transition: all 0.15s ease;
+  /* Show subtle outline on all selectable elements */
+  outline: 1px dashed rgba(59, 130, 246, 0.4);
+  outline-offset: 2px;
+  background-color: rgba(59, 130, 246, 0.03);
 }
 
-/* Show outline ONLY when hovering in selection mode */
+/* Stronger outline when hovering in selection mode */
 body.block-selection-mode .block-hoverable:hover {
   outline: 2px solid rgba(59, 130, 246, 0.8);
   outline-offset: 3px;
-  background-color: rgba(59, 130, 246, 0.05);
+  background-color: rgba(59, 130, 246, 0.08);
   box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
 }
 
 .block-hovered {
-  outline: 2px dashed rgba(33, 150, 243, 0.4) !important;
+  outline: 2px dashed rgba(33, 150, 243, 0.5) !important;
   outline-offset: 2px;
-  background-color: rgba(33, 150, 243, 0.05) !important;
+  background-color: rgba(33, 150, 243, 0.08) !important;
 }
 
+/* Selected element - YELLOW highlight (persists even after Ctrl release) */
 .block-selected {
-  outline: 3px solid #2196F3 !important;
-  outline-offset: 2px;
-  background-color: rgba(33, 150, 243, 0.1) !important;
-  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.2) !important;
+  outline: 4px solid #FFC107 !important;
+  outline-offset: 3px;
+  background-color: rgba(255, 193, 7, 0.2) !important;
+  box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.3),
+              0 4px 12px rgba(255, 193, 7, 0.4) !important;
+  transition: all 0.2s ease !important;
+  z-index: 10 !important;
+  position: relative !important;
+}
+
+/* Ensure selected element stays visible even when not in selection mode */
+.block-selected:not(body.block-selection-mode .block-selected) {
+  outline: 4px solid #FFC107 !important;
+  outline-offset: 3px;
+  background-color: rgba(255, 193, 7, 0.2) !important;
 }
 
 /* Animation for selection mode indicator */

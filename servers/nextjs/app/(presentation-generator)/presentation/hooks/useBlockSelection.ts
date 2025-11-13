@@ -230,6 +230,9 @@ export function useBlockSelection() {
     let debounceTimer: NodeJS.Timeout | null = null;
 
     const initializeBlocks = () => {
+      // Store currently selected element to preserve it after re-initialization
+      const currentlySelectedElement = document.querySelector('.block-selected');
+
       // Clean up previous listeners
       cleanupFunctionsRef.current.forEach(cleanup => cleanup());
       cleanupFunctionsRef.current = [];
@@ -386,6 +389,11 @@ export function useBlockSelection() {
 
         cleanupFunctionsRef.current.push(cleanup);
       });
+
+      // Restore the selected class to the previously selected element
+      if (currentlySelectedElement && currentlySelectedElement.hasAttribute('data-block-selectable')) {
+        currentlySelectedElement.classList.add('block-selected');
+      }
     };
 
     // Initialize immediately on mount
@@ -397,6 +405,16 @@ export function useBlockSelection() {
       // These were causing re-initialization during button clicks (Export button issue)
       const shouldIgnore = mutations.every(mutation => {
         const target = mutation.target as HTMLElement;
+
+        // Ignore if mutation is just adding/removing block selection classes
+        if (mutation.type === 'attributes' &&
+            mutation.attributeName === 'class' &&
+            (target.classList.contains('block-selected') ||
+             target.classList.contains('block-hovered') ||
+             target.classList.contains('block-hoverable'))) {
+          return true;
+        }
+
         // Ignore if mutation is in popover, tooltip, dropdown, or other UI overlays
         if (target.closest('[data-radix-popper-content-wrapper]')) return true;
         if (target.closest('[role="dialog"]')) return true;
@@ -422,6 +440,8 @@ export function useBlockSelection() {
       observer.observe(slidesWrapper, {
         childList: true,
         subtree: true,
+        attributes: true,
+        attributeFilter: ['class'], // Only watch class changes
       });
     }
 
