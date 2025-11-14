@@ -147,9 +147,10 @@ For HORIZONTAL LAYOUT (Option 3):
 
     parent_info_text = f"\n\n**Parent Container**: {parent_container_info}" if parent_container_info else ""
 
-    # Truncate full_slide_html for prompt if too long (keep first 5000 chars)
-    slide_context = full_slide_html[:5000] if full_slide_html else "Not provided"
-    slide_context_note = f"\n\n**Full Slide HTML Context** (for understanding colors, themes, and overall layout):\n```html\n{slide_context}\n```" if full_slide_html else ""
+    # Send full slide HTML - no truncation
+    # The AI needs complete context to understand colors, spacing, and design patterns
+    # Typical slides are 10-30KB (2500-7500 tokens) which is acceptable
+    slide_context_note = f"\n\n**Full Slide HTML Context** (for understanding colors, themes, and overall layout):\n```html\n{full_slide_html}\n```" if full_slide_html else ""
 
     return f"""Generate 3 layout variants for this HTML block.
 
@@ -219,6 +220,15 @@ async def generate_layout_variants(
         variant_count = max(1, min(variant_count, 3))
         llm_client = LLMClient()
 
+        # Log input sizes
+        print(f"[Layout Variants] Input sizes:")
+        print(f"  - Block HTML: {len(html)} chars")
+        print(f"  - Full slide HTML: {len(full_slide_html)} chars")
+
+        # Estimate token count (rough: 1 token ≈ 4 characters)
+        estimated_tokens = (len(html) + len(full_slide_html)) // 4
+        print(f"  - Estimated input tokens: ~{estimated_tokens}")
+
         # Build user message with full slide context
         user_prompt = get_user_prompt(
             html,
@@ -228,6 +238,8 @@ async def generate_layout_variants(
             available_height,
             parent_container_info
         )
+
+        print(f"  - Final prompt length: {len(user_prompt)} chars (~{len(user_prompt)//4} tokens)")
 
         messages = [
             LLMSystemMessage(content=get_system_prompt()),

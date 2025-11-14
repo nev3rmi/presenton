@@ -313,12 +313,14 @@ ${JSON.stringify(currentSlide.content, null, 2)}
 
       // Get the full slide HTML for context
       let fullSlideHTML = '';
+      let fullSlideHTMLForPreview = ''; // Keep original HTML for preview rendering
       if (slideId) {
         const slideContainer = document.querySelector(`[data-slide-id="${slideId}"]`);
         if (slideContainer) {
           const slideContent = slideContainer.querySelector('[data-slide-content="true"]');
           if (slideContent) {
-            fullSlideHTML = cleanHTMLForAI(slideContent.innerHTML);
+            fullSlideHTMLForPreview = slideContent.innerHTML; // Original HTML for preview
+            fullSlideHTML = cleanHTMLForAI(fullSlideHTMLForPreview); // Cleaned for API
             console.log('[SmartSuggestions] Captured full slide HTML:', fullSlideHTML.length, 'chars');
           }
         }
@@ -335,13 +337,15 @@ ${JSON.stringify(currentSlide.content, null, 2)}
       );
 
       if (response && response.variants) {
-        // Use the same fullSlideHTML we sent to the AI for preview generation
+        // Use the ORIGINAL fullSlideHTML for preview generation (not cleaned)
         const variantsWithIds = response.variants.map((variant: any, index: number) => {
           // Generate full preview HTML by replacing the original block with the variant
           let fullPreviewHTML = '';
-          if (fullSlideHTML && blockHTML) {
+          if (fullSlideHTMLForPreview && blockHTML) {
+            // Get the original (uncleaned) block HTML for replacement
+            const originalBlockHTML = blockElement.outerHTML;
             // Simple string replacement - fast and efficient!
-            fullPreviewHTML = fullSlideHTML.replace(blockHTML, variant.html);
+            fullPreviewHTML = fullSlideHTMLForPreview.replace(originalBlockHTML, variant.html);
             console.log(`[SmartSuggestions] Variant ${index}: Generated preview HTML`, fullPreviewHTML.length, 'chars');
           } else {
             console.warn(`[SmartSuggestions] Variant ${index}: Missing fullSlideHTML or blockHTML, using fallback`);
