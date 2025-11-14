@@ -97,57 +97,67 @@ async function ensureTelemetryStatus(): Promise<boolean> {
 }
 
 export function initMixpanel(): void {
-  if (!canUseMixpanel()) return;
-  if (window.__mixpanel_initialized) return;
-  // Ensure telemetry is allowed before initializing
-  void ensureTelemetryStatus().then((enabled) => {
-    if (!enabled) return;
-    if (window.__mixpanel_initialized) return;
-    mixpanel.init(MIXPANEL_TOKEN as string, { track_pageview: false });
-    mixpanel.identify(mixpanel.get_distinct_id());
-    window.__mixpanel_initialized = true;
-  });
+  // DISABLED: Mixpanel tracking disabled to prevent errors
+  return;
+  // if (!canUseMixpanel()) return;
+  // if (window.__mixpanel_initialized) return;
+  // // Ensure telemetry is allowed before initializing
+  // void ensureTelemetryStatus().then((enabled) => {
+  //   if (!enabled) return;
+  //   if (window.__mixpanel_initialized) return;
+  //   mixpanel.init(MIXPANEL_TOKEN as string, { track_pageview: false });
+  //   mixpanel.identify(mixpanel.get_distinct_id());
+  //   window.__mixpanel_initialized = true;
+  // });
 }
 
 export function track(eventName: string, props?: Record<string, unknown>): void {
-  if (!canUseMixpanel()) return;
-  if (typeof window !== 'undefined' && window.__mixpanel_telemetry_enabled === false) {
-    return;
-  }
-  if (!window.__mixpanel_initialized) {
-    initMixpanel();
-    return;
-  }
-  mixpanel.track(eventName, props);
+  // DISABLED: Mixpanel tracking disabled to prevent errors
+  return;
+  // if (!canUseMixpanel()) return;
+  // if (typeof window !== 'undefined' && window.__mixpanel_telemetry_enabled === false) {
+  //   return;
+  // }
+  // if (!window.__mixpanel_initialized) {
+  //   initMixpanel();
+  //   return;
+  // }
+  // mixpanel.track(eventName, props);
 }
 
 export function trackEvent(event: MixpanelEvent, props?: MixpanelProps): void {
-  track(event, props);
+  // DISABLED: Mixpanel tracking disabled to prevent errors
+  return;
+  // track(event, props);
 }
 
 export function getDistinctId(): string | undefined {
-  if (!canUseMixpanel()) return undefined;
-  if (typeof window !== 'undefined' && window.__mixpanel_telemetry_enabled === false) {
-    return undefined;
-  }
-  if (!window.__mixpanel_initialized) {
-    initMixpanel();
-    return undefined;
-  }
-  if (!window.__mixpanel_initialized) return undefined;
-  return mixpanel.get_distinct_id();
+  // DISABLED: Mixpanel tracking disabled to prevent errors
+  return undefined;
+  // if (!canUseMixpanel()) return undefined;
+  // if (typeof window !== 'undefined' && window.__mixpanel_telemetry_enabled === false) {
+  //   return undefined;
+  // }
+  // if (!window.__mixpanel_initialized) {
+  //   initMixpanel();
+  //   return undefined;
+  // }
+  // if (!window.__mixpanel_initialized) return undefined;
+  // return mixpanel.get_distinct_id();
 }
 
 export function identifyAnonymous(): void {
-  if (!canUseMixpanel()) return;
-  if (typeof window !== 'undefined' && window.__mixpanel_telemetry_enabled === false) {
-    return;
-  }
-  if (!window.__mixpanel_initialized) {
-    initMixpanel();
-    return;
-  }
-  mixpanel.identify(mixpanel.get_distinct_id());
+  // DISABLED: Mixpanel tracking disabled to prevent errors
+  return;
+  // if (!canUseMixpanel()) return;
+  // if (typeof window !== 'undefined' && window.__mixpanel_telemetry_enabled === false) {
+  //   return;
+  // }
+  // if (!window.__mixpanel_initialized) {
+  //   initMixpanel();
+  //   return;
+  // }
+  // mixpanel.identify(mixpanel.get_distinct_id());
 }
 
 export default {

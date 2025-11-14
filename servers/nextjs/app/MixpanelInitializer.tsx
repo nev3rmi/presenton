@@ -7,13 +7,14 @@ import { usePathname } from 'next/navigation';
 export function MixpanelInitializer({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
+  // DISABLED: Mixpanel tracking disabled - these functions are no-ops in utils/mixpanel.ts
   // Initialize once
   useEffect(() => {
-    initMixpanel();
+    initMixpanel(); // No-op
   }, []);
 
   useEffect(() => {
-    trackEvent(MixpanelEvent.PageView, { url: pathname });
+    trackEvent(MixpanelEvent.PageView, { url: pathname }); // No-op
   }, [pathname]);
 
   return <>{children}</>;
