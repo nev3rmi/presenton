@@ -451,29 +451,133 @@ ${JSON.stringify(currentSlide.content, null, 2)}
             // Add data-textpath attributes to Tiptap editors, then remove editor infrastructure
             const cleanedElement = slideContentElement.cloneNode(true) as HTMLElement;
 
-            // STEP 1: Find all Tiptap editors and add data-textpath attributes based on content matching
-            const tiptapEditors = cleanedElement.querySelectorAll('.tiptap-text-editor');
-            tiptapEditors.forEach((editor) => {
-              const proseMirror = editor.querySelector('.ProseMirror');
-              const textContent = proseMirror?.textContent?.trim() || '';
+            // STEP 1: Add data-textpath attributes to ALL text elements based on content matching
+            // This works for both traditional templates (with Tiptap editors) AND dynamic layouts (plain text)
 
-              if (textContent && slideToApply.content) {
-                // Match this editor's text to a field in slide content
+            // Helper: Match text content to slide data fields (with recursive nested search)
+            const matchTextToField = (text: string): string | null => {
+              if (!text || !slideToApply.content) return null;
+
+              const trimmedText = text.trim();
+
+              // Recursive search through object/arrays
+              const searchObject = (obj: any, path: string[] = []): string | null => {
+                for (const [key, value] of Object.entries(obj)) {
+                  const currentPath = [...path, key];
+
+                  if (typeof value === 'string' && value.trim() === trimmedText) {
+                    return currentPath.join('.');
+                  }
+
+                  if (Array.isArray(value)) {
+                    for (let i = 0; i < value.length; i++) {
+                      const result = searchObject({ [i]: value[i] }, currentPath);
+                      if (result) return result;
+                    }
+                  } else if (typeof value === 'object' && value !== null) {
+                    // Skip image/icon objects (they contain metadata, not editable text)
+                    const hasImageUrl = '__image_url__' in value;
+                    const hasIconUrl = '__icon_url__' in value;
+                    if (!hasImageUrl && !hasIconUrl) {
+                      const result = searchObject(value, currentPath);
+                      if (result) return result;
+                    }
+                  }
+                }
+                return null;
+              };
+
+              return searchObject(slideToApply.content);
+            };
+
+            // Find all potential text elements (h1-h6, p, div with text)
+            const allElements = cleanedElement.querySelectorAll('h1, h2, h3, h4, h5, h6, p, div');
+            allElements.forEach((element) => {
+              const el = element as HTMLElement;
+
+              // Skip if already has data-textpath
+              if (el.hasAttribute('data-textpath')) return;
+
+              // Get text from either Tiptap editor OR plain text
+              let textContent = '';
+              const tiptapEditor = el.querySelector('.tiptap-text-editor');
+              if (tiptapEditor) {
+                const proseMirror = tiptapEditor.querySelector('.ProseMirror');
+                textContent = proseMirror?.textContent?.trim() || '';
+              } else {
+                // Get direct text (not from deeply nested children)
+                const directText = Array.from(el.childNodes)
+                  .filter(node => node.nodeType === Node.TEXT_NODE)
+                  .map(node => node.textContent)
+                  .join('').trim();
+
+                if (directText) {
+                  textContent = directText;
+                } else if (!el.querySelector('img, svg') && el.children.length === 0) {
+                  // If no images and no children, use all text
+                  textContent = el.textContent?.trim() || '';
+                }
+              }
+
+              // Try to match this text to a content field
+              if (textContent && textContent.length > 3) {
+                const matchedField = matchTextToField(textContent);
+                if (matchedField) {
+                  el.setAttribute('data-textpath', matchedField);
+                  console.log(`[HTML Capture] Added data-textpath="${matchedField}" to <${el.tagName}>`);
+                }
+              }
+            });
+
+            // STEP 1b: Find all image/icon elements and add data-path attributes based on src matching
+            const imageElements = cleanedElement.querySelectorAll('img');
+            imageElements.forEach((img) => {
+              const imgSrc = img.getAttribute('src') || '';
+
+              if (imgSrc && slideToApply.content) {
+                // Match this image's src to a field in slide content
                 let matchedField: string | null = null;
 
+                // Helper function to check if value contains this image URL
+                const checkValue = (key: string, value: any): boolean => {
+                  if (typeof value === 'string' && value === imgSrc) {
+                    return true;
+                  }
+                  if (typeof value === 'object' && value !== null) {
+                    // Check __image_url__ or __icon_url__ fields
+                    if (value.__image_url__ === imgSrc || value.__icon_url__ === imgSrc) {
+                      return true;
+                    }
+                  }
+                  return false;
+                };
+
+                // Search through all content fields
                 for (const [key, value] of Object.entries(slideToApply.content)) {
-                  if (typeof value === 'string' && value.trim() === textContent) {
+                  if (checkValue(key, value)) {
                     matchedField = key;
                     break;
                   }
+                  // Also check nested fields (e.g., bulletPoints[0].icon)
+                  if (Array.isArray(value)) {
+                    for (let i = 0; i < value.length; i++) {
+                      if (typeof value[i] === 'object') {
+                        for (const [nestedKey, nestedValue] of Object.entries(value[i])) {
+                          if (checkValue(nestedKey, nestedValue)) {
+                            matchedField = `${key}[${i}].${nestedKey}`;
+                            break;
+                          }
+                        }
+                      }
+                      if (matchedField) break;
+                    }
+                  }
+                  if (matchedField) break;
                 }
 
-                // Add data-textpath to the parent element if we found a match
-                if (matchedField) {
-                  const parent = editor.parentElement;
-                  if (parent && !parent.hasAttribute('data-textpath')) {
-                    parent.setAttribute('data-textpath', matchedField);
-                  }
+                // Add data-path to the image element if we found a match
+                if (matchedField && !img.hasAttribute('data-path')) {
+                  img.setAttribute('data-path', matchedField);
                 }
               }
             });
