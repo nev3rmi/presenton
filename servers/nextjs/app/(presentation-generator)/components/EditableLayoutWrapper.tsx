@@ -175,74 +175,102 @@ const EditableLayoutWrapper: React.FC<EditableLayoutWrapperProps> = ({
 
         imgElements.forEach((img, index) => {
             const htmlImg = img as HTMLImageElement;
-            const src = htmlImg.src;
+            const imgSrc = htmlImg.src;
 
-            if (src) {
-                const result = findBestDataPath(src, htmlImg, slideData);
+            // PRIORITY 1: Check if element has data-path attribute (from variants)
+            const dataPathAttr = htmlImg.getAttribute('data-path');
+            let dataPath: string | null = null;
+            let type: 'image' | 'icon' = 'image';
+            let data: any = null;
+
+            if (dataPathAttr && !dataPathAttr.includes('http') && !dataPathAttr.includes('/')) {
+                // This is a field path (e.g., "image", "bulletPoints[0].icon"), not a URL
+                dataPath = dataPathAttr;
+
+                // Determine type based on field name
+                type = dataPathAttr.includes('icon') ? 'icon' : 'image';
+
+                // Get the data object from slideData using the path
+                const getValueByPath = (obj: any, path: string): any => {
+                    const keys = path.replace(/\[(\d+)\]/g, '.$1').split('.');
+                    let value = obj;
+                    for (const key of keys) {
+                        if (value === null || value === undefined) return undefined;
+                        value = value[key];
+                    }
+                    return value;
+                };
+
+                data = getValueByPath(slideData, dataPath);
+            } else if (imgSrc) {
+                // PRIORITY 2: Fall back to URL matching (for templates without data-path)
+                const result = findBestDataPath(imgSrc, htmlImg, slideData);
 
                 if (result) {
-                    const { path: dataPath, type, data } = result;
-
-                    // Mark as processed to prevent re-processing
-                    htmlImg.setAttribute('data-editable-processed', 'true');
-
-                    // Add a unique identifier to help with debugging
-                    htmlImg.setAttribute('data-editable-id', `${slideIndex}-${type}-${dataPath}-${index}`);
-
-                    const editableElement: EditableElement = {
-                        id: `${slideIndex}-${type}-${dataPath}-${index}`,
-                        type,
-                        src,
-                        dataPath,
-                        data,
-                        element: htmlImg
-                    };
-
-                    newEditableElements.push(editableElement);
-
-                    // Add click handler directly to the image
-                    const clickHandler = (e: Event) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setActiveEditor(editableElement);
-                    };
-
-                    htmlImg.addEventListener('click', clickHandler);
-
-                    const itemIndex = parseInt(`${slideIndex}-${type}-${dataPath}-${index}`.split('-').pop() || '0');
-                    const propertiesData = properties?.[itemIndex];
-
-                    // Add hover effects without changing layout
-                    htmlImg.style.cursor = 'pointer';
-                    htmlImg.style.transition = 'opacity 0.2s, transform 0.2s';
-                    htmlImg.style.objectFit = propertiesData?.initialObjectFit;
-                    htmlImg.style.objectPosition = `${propertiesData?.initialFocusPoint?.x}% ${propertiesData?.initialFocusPoint?.y}%`;
-
-                    const mouseEnterHandler = () => {
-                        htmlImg.style.opacity = '0.8';
-
-                    };
-
-                    const mouseLeaveHandler = () => {
-                        htmlImg.style.opacity = '1';
-
-                    };
-
-                    htmlImg.addEventListener('mouseenter', mouseEnterHandler);
-                    htmlImg.addEventListener('mouseleave', mouseLeaveHandler);
-
-                    // Store cleanup functions
-                    (htmlImg as any)._editableCleanup = () => {
-                        htmlImg.removeEventListener('click', clickHandler);
-                        htmlImg.removeEventListener('mouseenter', mouseEnterHandler);
-                        htmlImg.removeEventListener('mouseleave', mouseLeaveHandler);
-                        htmlImg.style.cursor = '';
-                        htmlImg.style.transition = '';
-                        htmlImg.style.opacity = '';
-                        htmlImg.style.transform = '';
-                        htmlImg.removeAttribute('data-editable-processed');
-                    };
+                    dataPath = result.path;
+                    type = result.type;
+                    data = result.data;
                 }
+            }
+
+            if (dataPath && data) {
+                // Mark as processed to prevent re-processing
+                htmlImg.setAttribute('data-editable-processed', 'true');
+
+                // Add a unique identifier to help with debugging
+                htmlImg.setAttribute('data-editable-id', `${slideIndex}-${type}-${dataPath}-${index}`);
+
+                const editableElement: EditableElement = {
+                    id: `${slideIndex}-${type}-${dataPath}-${index}`,
+                    type,
+                    src: imgSrc || '',
+                    dataPath,
+                    data,
+                    element: htmlImg
+                };
+
+                newEditableElements.push(editableElement);
+
+                // Add click handler directly to the image
+                const clickHandler = (e: Event) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setActiveEditor(editableElement);
+                };
+
+                htmlImg.addEventListener('click', clickHandler);
+
+                const itemIndex = parseInt(`${slideIndex}-${type}-${dataPath}-${index}`.split('-').pop() || '0');
+                const propertiesData = properties?.[itemIndex];
+
+                // Add hover effects without changing layout
+                htmlImg.style.cursor = 'pointer';
+                htmlImg.style.transition = 'opacity 0.2s, transform 0.2s';
+                htmlImg.style.objectFit = propertiesData?.initialObjectFit;
+                htmlImg.style.objectPosition = `${propertiesData?.initialFocusPoint?.x}% ${propertiesData?.initialFocusPoint?.y}%`;
+
+                const mouseEnterHandler = () => {
+                    htmlImg.style.opacity = '0.8';
+                };
+
+                const mouseLeaveHandler = () => {
+                    htmlImg.style.opacity = '1';
+                };
+
+                htmlImg.addEventListener('mouseenter', mouseEnterHandler);
+                htmlImg.addEventListener('mouseleave', mouseLeaveHandler);
+
+                // Store cleanup functions
+                (htmlImg as any)._editableCleanup = () => {
+                    htmlImg.removeEventListener('click', clickHandler);
+                    htmlImg.removeEventListener('mouseenter', mouseEnterHandler);
+                    htmlImg.removeEventListener('mouseleave', mouseLeaveHandler);
+                    htmlImg.style.cursor = '';
+                    htmlImg.style.transition = '';
+                    htmlImg.style.opacity = '';
+                    htmlImg.style.transform = '';
+                    htmlImg.removeAttribute('data-editable-processed');
+                };
             }
         });
         
@@ -250,13 +278,45 @@ const EditableLayoutWrapper: React.FC<EditableLayoutWrapperProps> = ({
         svgElements.forEach((svg, index) => {
             const svgEl = svg as SVGElement;
             const wrapperWithUrl = (svgEl as unknown as HTMLElement).closest('[data-path]') as HTMLElement | null;
-            const src = wrapperWithUrl?.getAttribute('data-path') || '';
+            const dataPathValue = wrapperWithUrl?.getAttribute('data-path') || '';
 
-            if (src) {
-                const result = findBestDataPath(src, svgEl, slideData);
+            if (!dataPathValue) return;
 
-                if (result && result.type === 'icon') {
-                    const { path: dataPath, data } = result;
+            // Check if data-path is a field path or a URL
+            let dataPath: string | null = null;
+            let type: 'image' | 'icon' = 'icon';
+            let data: any = null;
+
+            if (!dataPathValue.includes('http') && !dataPathValue.includes('/static')) {
+                // This is a field path (e.g., "bulletPoints[0].icon")
+                dataPath = dataPathValue;
+                type = dataPathValue.includes('icon') ? 'icon' : 'image';
+
+                // Get the data object from slideData using the path
+                const getValueByPath = (obj: any, path: string): any => {
+                    const keys = path.replace(/\[(\d+)\]/g, '.$1').split('.');
+                    let value = obj;
+                    for (const key of keys) {
+                        if (value === null || value === undefined) return undefined;
+                        value = value[key];
+                    }
+                    return value;
+                };
+
+                data = getValueByPath(slideData, dataPath);
+            } else {
+                // This is a URL, use URL matching
+                const result = findBestDataPath(dataPathValue, svgEl, slideData);
+
+                if (result) {
+                    dataPath = result.path;
+                    type = result.type;
+                    data = result.data;
+                }
+            }
+
+            if (dataPath && data) {
+                if (type === 'icon') {
 
                     // Mark as processed to prevent re-processing
                     svgEl.setAttribute('data-editable-processed', 'true');
@@ -267,7 +327,7 @@ const EditableLayoutWrapper: React.FC<EditableLayoutWrapperProps> = ({
                     const editableElement: EditableElement = {
                         id: `${slideIndex}-icon-${dataPath}-svg-${index}`,
                         type: 'icon',
-                        src,
+                        src: data?.__icon_url__ || dataPathValue,
                         dataPath,
                         data,
                         element: svgEl
@@ -314,6 +374,98 @@ const EditableLayoutWrapper: React.FC<EditableLayoutWrapperProps> = ({
             }
         });
 
+        // Process SPAN icon elements (inline SVG icons wrapped in span[role="img"])
+        const spanIconElements = containerRef.current.querySelectorAll('span[role="img"]:not([data-editable-processed])');
+        spanIconElements.forEach((span, index) => {
+            const spanEl = span as HTMLElement;
+            const dataPathValue = spanEl.getAttribute('data-path') || '';
+
+            if (!dataPathValue) return;
+
+            // Check if data-path is a field path or a URL
+            let dataPath: string | null = null;
+            let type: 'image' | 'icon' = 'icon';
+            let data: any = null;
+
+            if (!dataPathValue.includes('http') && !dataPathValue.includes('/static')) {
+                // This is a field path (e.g., "bulletPoints[0].icon")
+                dataPath = dataPathValue;
+                type = 'icon';
+
+                // Get the data object from slideData using the path
+                const getValueByPath = (obj: any, path: string): any => {
+                    const keys = path.replace(/\[(\d+)\]/g, '.$1').split('.');
+                    let value = obj;
+                    for (const key of keys) {
+                        if (value === null || value === undefined) return undefined;
+                        value = value[key];
+                    }
+                    return value;
+                };
+
+                data = getValueByPath(slideData, dataPath);
+            } else {
+                // This is a URL, use URL matching
+                const result = findBestDataPath(dataPathValue, spanEl as any, slideData);
+
+                if (result) {
+                    dataPath = result.path;
+                    type = result.type;
+                    data = result.data;
+                }
+            }
+
+            if (dataPath && data) {
+                // Mark as processed
+                spanEl.setAttribute('data-editable-processed', 'true');
+
+                const editableElement: EditableElement = {
+                    id: `${slideIndex}-icon-${dataPath}-${index}`,
+                    type: 'icon',
+                    src: dataPathValue,
+                    dataPath,
+                    data,
+                    element: spanEl as any
+                };
+
+                newEditableElements.push(editableElement);
+
+                // Add click handler
+                const clickHandler = (e: Event) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setActiveEditor(editableElement);
+                };
+
+                spanEl.addEventListener('click', clickHandler);
+
+                // Add hover effects
+                spanEl.style.cursor = 'pointer';
+                spanEl.style.transition = 'opacity 0.2s';
+
+                const mouseEnterHandler = () => {
+                    spanEl.style.opacity = '0.7';
+                };
+
+                const mouseLeaveHandler = () => {
+                    spanEl.style.opacity = '1';
+                };
+
+                spanEl.addEventListener('mouseenter', mouseEnterHandler);
+                spanEl.addEventListener('mouseleave', mouseLeaveHandler);
+
+                // Store cleanup functions
+                (spanEl as any)._editableCleanup = () => {
+                    spanEl.removeEventListener('click', clickHandler);
+                    spanEl.removeEventListener('mouseenter', mouseEnterHandler);
+                    spanEl.removeEventListener('mouseleave', mouseLeaveHandler);
+                    spanEl.style.cursor = '';
+                    spanEl.style.transition = '';
+                    spanEl.style.opacity = '';
+                    spanEl.removeAttribute('data-editable-processed');
+                };
+            }
+        });
 
         setEditableElements(prev => [...prev, ...newEditableElements]);
     };

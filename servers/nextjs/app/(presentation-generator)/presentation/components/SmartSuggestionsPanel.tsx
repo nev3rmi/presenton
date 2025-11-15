@@ -529,55 +529,102 @@ ${JSON.stringify(currentSlide.content, null, 2)}
               }
             });
 
-            // STEP 1b: Find all image/icon elements and add data-path attributes based on src matching
-            const imageElements = cleanedElement.querySelectorAll('img');
-            imageElements.forEach((img) => {
-              const imgSrc = img.getAttribute('src') || '';
+            // STEP 1b: Find all image/icon elements (img, svg, span with role="img") and add data-path attributes
+            const imageElements = cleanedElement.querySelectorAll('img, svg, span[role="img"]');
+            imageElements.forEach((imgOrSvg) => {
+              // For IMG: use src attribute
+              // For SPAN with role="img": icon URL might be in data-path or aria-label
+              // For SVG: inline, match by context
+              const tagName = imgOrSvg.tagName.toLowerCase();
+              const isImg = tagName === 'img';
+              const isIconSpan = tagName === 'span' && imgOrSvg.getAttribute('role') === 'img';
+
+              // Get the image/icon URL
+              let imgSrc = '';
+              if (isImg) {
+                imgSrc = imgOrSvg.getAttribute('src') || '';
+              } else if (isIconSpan) {
+                // For icon spans, the URL might be in existing data-path (we want to replace it with field path)
+                const existingDataPath = imgOrSvg.getAttribute('data-path');
+                if (existingDataPath && (existingDataPath.includes('http') || existingDataPath.includes('/'))) {
+                  imgSrc = existingDataPath; // Use the URL to match against slide content
+                }
+              }
 
               if (imgSrc && slideToApply.content) {
-                // Match this image's src to a field in slide content
-                let matchedField: string | null = null;
+                // Recursively match image src to field path
+                const matchImageToPath = (obj: any, path: string[] = []): string | null => {
+                  for (const [key, value] of Object.entries(obj)) {
+                    const currentPath = [...path, key];
 
-                // Helper function to check if value contains this image URL
-                const checkValue = (key: string, value: any): boolean => {
-                  if (typeof value === 'string' && value === imgSrc) {
-                    return true;
-                  }
-                  if (typeof value === 'object' && value !== null) {
-                    // Check __image_url__ or __icon_url__ fields
-                    if (value.__image_url__ === imgSrc || value.__icon_url__ === imgSrc) {
-                      return true;
+                    // Check if this value matches the image src
+                    if (typeof value === 'string' && value === imgSrc) {
+                      return currentPath.join('.');
+                    }
+
+                    // Check if it's an image/icon object with __image_url__ or __icon_url__
+                    if (typeof value === 'object' && value !== null) {
+                      const hasImageUrl = '__image_url__' in value;
+                      const hasIconUrl = '__icon_url__' in value;
+
+                      if (hasImageUrl && (value as any).__image_url__ === imgSrc) {
+                        return currentPath.join('.');
+                      }
+                      if (hasIconUrl && (value as any).__icon_url__ === imgSrc) {
+                        return currentPath.join('.');
+                      }
+
+                      // Recursively search nested objects (skip if it's an image/icon metadata object)
+                      if (!hasImageUrl && !hasIconUrl) {
+                        const result = matchImageToPath(value, currentPath);
+                        if (result) return result;
+                      }
+                    }
+
+                    // Check arrays
+                    if (Array.isArray(value)) {
+                      for (let i = 0; i < value.length; i++) {
+                        const result = matchImageToPath({ [i]: value[i] }, currentPath);
+                        if (result) return result;
+                      }
                     }
                   }
-                  return false;
+                  return null;
                 };
 
-                // Search through all content fields
-                for (const [key, value] of Object.entries(slideToApply.content)) {
-                  if (checkValue(key, value)) {
-                    matchedField = key;
-                    break;
+                const matchedPath = matchImageToPath(slideToApply.content);
+
+                // Add/update data-path on the image element if we found a match
+                if (matchedPath) {
+                  const existingPath = imgOrSvg.getAttribute('data-path');
+                  // Update if no data-path exists, OR if existing one is a URL (not a field path)
+                  if (!existingPath || existingPath.includes('http') || existingPath.includes('/')) {
+                    imgOrSvg.setAttribute('data-path', matchedPath);
+                    console.log(`[HTML Capture] ${existingPath ? 'Updated' : 'Added'} data-path="${matchedPath}" to <${imgOrSvg.tagName}> src="${imgSrc.substring(0, 60)}..."`);
                   }
-                  // Also check nested fields (e.g., bulletPoints[0].icon)
-                  if (Array.isArray(value)) {
-                    for (let i = 0; i < value.length; i++) {
-                      if (typeof value[i] === 'object') {
-                        for (const [nestedKey, nestedValue] of Object.entries(value[i])) {
-                          if (checkValue(nestedKey, nestedValue)) {
-                            matchedField = `${key}[${i}].${nestedKey}`;
-                            break;
-                          }
+                }
+              } else if (!isImg && slideToApply.content) {
+                // For SVG elements (icons), try to match based on position/index
+                // Since SVGs are inline and don't have src, we need a different approach
+                // Try to find this icon by matching nearby text (h3 title)
+                const nearbyH3 = imgOrSvg.closest('[class*="flex"], [class*="grid"]')?.querySelector('h3');
+                const nearbyTitle = nearbyH3?.textContent?.trim() || '';
+
+                if (nearbyTitle) {
+                  // Search for bulletPoints with this title
+                  const bulletPoints = slideToApply.content.bulletPoints;
+                  if (Array.isArray(bulletPoints)) {
+                    for (let i = 0; i < bulletPoints.length; i++) {
+                      if (bulletPoints[i]?.title === nearbyTitle) {
+                        const iconPath = `bulletPoints[${i}].icon`;
+                        if (!imgOrSvg.hasAttribute('data-path')) {
+                          imgOrSvg.setAttribute('data-path', iconPath);
+                          console.log(`[HTML Capture] Added data-path="${iconPath}" to <SVG> near title "${nearbyTitle}"`);
                         }
+                        break;
                       }
-                      if (matchedField) break;
                     }
                   }
-                  if (matchedField) break;
-                }
-
-                // Add data-path to the image element if we found a match
-                if (matchedField && !img.hasAttribute('data-path')) {
-                  img.setAttribute('data-path', matchedField);
                 }
               }
             });
