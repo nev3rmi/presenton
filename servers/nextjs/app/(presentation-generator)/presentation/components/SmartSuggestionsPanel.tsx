@@ -447,7 +447,55 @@ ${JSON.stringify(currentSlide.content, null, 2)}
           const slideContentElement = slideContainer.querySelector('[data-slide-content="true"]');
 
           if (slideContentElement) {
-            const html_content = slideContentElement.innerHTML;
+            // IMPORTANT: Clean the HTML before saving
+            // Add data-textpath attributes to Tiptap editors, then remove editor infrastructure
+            const cleanedElement = slideContentElement.cloneNode(true) as HTMLElement;
+
+            // STEP 1: Find all Tiptap editors and add data-textpath attributes based on content matching
+            const tiptapEditors = cleanedElement.querySelectorAll('.tiptap-text-editor');
+            tiptapEditors.forEach((editor) => {
+              const proseMirror = editor.querySelector('.ProseMirror');
+              const textContent = proseMirror?.textContent?.trim() || '';
+
+              if (textContent && slideToApply.content) {
+                // Match this editor's text to a field in slide content
+                let matchedField: string | null = null;
+
+                for (const [key, value] of Object.entries(slideToApply.content)) {
+                  if (typeof value === 'string' && value.trim() === textContent) {
+                    matchedField = key;
+                    break;
+                  }
+                }
+
+                // Add data-textpath to the parent element if we found a match
+                if (matchedField) {
+                  const parent = editor.parentElement;
+                  if (parent && !parent.hasAttribute('data-textpath')) {
+                    parent.setAttribute('data-textpath', matchedField);
+                  }
+                }
+              }
+            });
+
+            // STEP 2: Clean elements that now have data-textpath
+            const editableElements = cleanedElement.querySelectorAll('[data-textpath]');
+            editableElements.forEach(el => {
+              const htmlEl = el as HTMLElement;
+
+              // Check if this element contains a Tiptap editor
+              const tiptapEditor = htmlEl.querySelector('.tiptap-text-editor');
+              if (tiptapEditor) {
+                // Extract clean text content from the ProseMirror editor
+                const proseMirror = tiptapEditor.querySelector('.ProseMirror');
+                const textContent = proseMirror?.textContent || htmlEl.textContent || '';
+
+                // Replace the entire Tiptap infrastructure with clean text
+                htmlEl.innerHTML = textContent;
+              }
+            });
+
+            const html_content = cleanedElement.innerHTML;
 
             // DEBUG: Log the actual captured HTML
             console.log("========================================");

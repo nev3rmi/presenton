@@ -254,12 +254,14 @@ def generate_static_variants(html: str, block_type: str, available_width: int, v
         return f'{new_opening}{inner_content}</{tag_name}>'
 
     if block_type == 'list-container' or 'space-y' in ' '.join(current_classes):
-        # Variant 1: Vertical list with more spacing
-        variant1_classes = base_classes + ['space-y-8']
+        # Variant 1: DRAMATIC RESTRUCTURE - Wrap in card with border
+        # This completely changes the HTML structure while preserving data-textpath
+        inner_classes = ' '.join(base_classes + ['space-y-6'])
+        wrapped_html = f'<div class="border-4 border-blue-500 rounded-lg p-6 bg-blue-50 shadow-xl"><div class="{inner_classes}">{inner_content}</div></div>'
         variants.append(LayoutVariant(
-            title="Spacious Vertical List",
-            description="Increased vertical spacing between items using 'space-y-8' for better readability",
-            html=build_html_with_classes(variant1_classes)
+            title="🎯 DRAMATIC: Card Layout",
+            description="TESTING: Wrapped entire block in nested divs with border/shadow - verifies data-textpath survives restructuring",
+            html=wrapped_html
         ))
 
         # Variant 2: 2-column grid

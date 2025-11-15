@@ -38,6 +38,13 @@ function detectBlockType(element: HTMLElement): Block['type'] {
   // Image
   if (tag === 'img') return 'image';
 
+  // IMPORTANT: Check for data-textpath BEFORE checking for empty content
+  // Elements with data-textpath should always be treated as 'text' type
+  // even if they're currently empty (they'll be populated by TiptapText)
+  if (element.hasAttribute('data-textpath')) {
+    return 'text';
+  }
+
   // Divider (decorative elements with no text/children)
   if (element.children.length === 0 && !element.textContent?.trim()) {
     return 'divider';
@@ -116,6 +123,20 @@ function shouldSkipElement(element: HTMLElement): boolean {
 }
 
 /**
+ * Extract plain text content from element, skipping editing infrastructure
+ */
+function extractTextContent(node: HTMLElement): string {
+  // If this element contains a TiptapText editor, extract content from the ProseMirror div
+  const proseMirror = node.querySelector('.ProseMirror');
+  if (proseMirror) {
+    return proseMirror.textContent?.trim() || '';
+  }
+
+  // Otherwise, get direct text content
+  return node.textContent?.trim() || '';
+}
+
+/**
  * Recursively traverse DOM and build structure tree
  */
 function traverseNode(node: HTMLElement): Block | null {
@@ -160,8 +181,17 @@ function traverseNode(node: HTMLElement): Block | null {
     block.src = node.getAttribute('src') || undefined;
     block.alt = node.getAttribute('alt') || undefined;
   } else if (type === 'text') {
-    // Get all text content (including from formatting children like <strong>)
-    block.content = node.textContent?.trim() || undefined;
+    // IMPORTANT: For elements with data-textpath, extract clean text content
+    // This handles cases where the HTML contains already-rendered Tiptap editors
+    // We want to extract just the text, not the editor infrastructure
+    if (node.hasAttribute('data-textpath')) {
+      block.content = extractTextContent(node);
+      // Don't process children for data-textpath elements - we've already extracted the content
+      // This prevents including the Tiptap editor infrastructure as children
+    } else {
+      // For regular text blocks, get all text content (including from formatting children like <strong>)
+      block.content = node.textContent?.trim() || undefined;
+    }
   } else if (type === 'container' || type === 'divider') {
     // Process children
     const children: Block[] = [];

@@ -118,9 +118,10 @@ function renderBlock(
         // Render TiptapText component directly for editable text
         const content = getValueByPath(slideData, dataTextPath) || block.content || '';
 
-        // Create a wrapper element with the original tag/styling
+        // Create a wrapper element with div to avoid nested <p> tags
+        // (TiptapText/ProseMirror creates its own <p> tag internally)
         return React.createElement(
-          block.tag,
+          'div',
           {
             key: block.id,
             className,
@@ -243,9 +244,10 @@ const DynamicHtmlLayout: React.FC<DynamicHtmlLayoutProps> = ({ data, slideIndex,
 };
 
 // Wrap with React.memo to prevent unnecessary re-renders
-// Only re-render if data actually changes
+// Only re-render if data actually changes OR if editing props change
 export default React.memo(DynamicHtmlLayout, (prevProps, nextProps) => {
-  // Deep comparison of data structure
+  // Deep comparison of data structure AND editing-related props
   return JSON.stringify(prevProps.data) === JSON.stringify(nextProps.data) &&
-         prevProps.slideIndex === nextProps.slideIndex;
+         prevProps.slideIndex === nextProps.slideIndex &&
+         !!prevProps.onContentChange === !!nextProps.onContentChange; // Check if editing capability changed
 });
