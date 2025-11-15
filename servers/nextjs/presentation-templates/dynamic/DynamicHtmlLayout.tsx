@@ -12,6 +12,7 @@ import React from 'react';
 import * as z from 'zod';
 import type { HtmlStructure, Block } from '@/app/(presentation-generator)/utils/htmlParser';
 import TiptapText from '@/app/(presentation-generator)/components/TiptapText';
+import IconRenderer from '@/app/(presentation-generator)/components/IconRenderer';
 
 export const layoutId = 'dynamic-html-layout';
 export const layoutName = 'Dynamic HTML Layout';
@@ -128,34 +129,43 @@ function renderBlock(
       });
 
     case 'icon':
-      // Render SPAN icon element with live icon URL from slideData
+      // Render SPAN icon element with live SVG from slideData
       const iconDataPath = block.attributes?.['data-path'];
-      let iconUrl = '';
+      let liveIconUrl = '';
 
       // If data-path exists and slideData is available, use live icon URL
       if (iconDataPath && slideData) {
         const liveIconData = getValueByPath(slideData, iconDataPath);
         if (liveIconData && typeof liveIconData === 'object' && liveIconData.__icon_url__) {
-          iconUrl = liveIconData.__icon_url__;
+          liveIconUrl = liveIconData.__icon_url__;
         }
       }
 
-      // If we have a live URL, render as IMG instead of inline SVG
-      // This ensures icon changes persist after reload
-      if (iconUrl) {
+      // If we have a live URL, render with IconRenderer (fetches and renders inline SVG)
+      if (liveIconUrl) {
+        // Ensure the SPAN wrapper has proper sizing
+        const iconWrapperProps = {
+          ...props,
+          style: {
+            ...parseStyleString(block.styles),
+            display: 'inline-block',
+            width: '1.5rem',
+            height: '1.5rem'
+          }
+        };
+
         return React.createElement(
           block.tag,
-          props,
-          React.createElement('img', {
-            src: iconUrl,
-            alt: block.attributes?.['aria-label'] || 'icon',
+          iconWrapperProps,
+          React.createElement(IconRenderer, {
+            iconUrl: liveIconUrl,
             className: 'w-6 h-6',
-            style: { display: 'inline-block', verticalAlign: 'middle' }
+            style: {}
           })
         );
       }
 
-      // Fallback: Render the SPAN element with inline SVG from HTML
+      // Fallback: Render existing inline SVG from HTML (for initial load)
       return React.createElement(
         block.tag,
         props,
