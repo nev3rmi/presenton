@@ -70,6 +70,15 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
     (state: RootState) => state.presentationGeneration
   );
 
+  // Log Redux state changes for debugging
+  useEffect(() => {
+    if (slideIndex !== null && presentationData?.slides) {
+      const currentSlide = presentationData.slides[slideIndex];
+      console.log('[Redux State Change] presentationData updated');
+      console.log('  slide[', slideIndex, '].id:', currentSlide?.id);
+    }
+  }, [presentationData, slideIndex]);
+
   // Detect when selection changes and regenerate variants
   useEffect(() => {
     const currentContent = selectedText || selectedBlock?.content || '';
@@ -80,8 +89,16 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
     const elementChanged = currentElement !== previousBlockElement;
 
     if (contentChanged || elementChanged) {
+      console.log('========================================');
+      console.log('[Selection Change Effect] TRIGGERED');
+      console.log('  contentChanged:', contentChanged);
+      console.log('  elementChanged:', elementChanged);
+
       // Clear text variants when text selection changes
       if (contentChanged && currentContent) {
+        console.log('[Selection Change] Clearing TEXT variants');
+        console.log('  previous:', previousSelectedContent?.substring(0, 50));
+        console.log('  current:', currentContent?.substring(0, 50));
         setVariants([]);
         setRegeneratedTextSlides([]);
         setCurrentlyAppliedTextIndex(null);
@@ -90,6 +107,7 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
 
       // Clear layout variants when block selection changes
       if (elementChanged && currentElement) {
+        console.log('[Selection Change] Clearing LAYOUT variants');
         setLayoutVariants([]);
         setRegeneratedSlides([]);
         setCurrentlyAppliedIndex(null);
@@ -99,11 +117,18 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
       // Update tracking
       setPreviousSelectedContent(currentContent);
       setPreviousBlockElement(currentElement);
+      console.log('========================================');
     }
   }, [selectedText, selectedBlock?.content, selectedBlock?.element, previousSelectedContent, previousBlockElement]);
 
   const handleGenerateVariants = useCallback(async () => {
     const textToVariate = selectedText || selectedBlock?.content || '';
+
+    console.log('========================================');
+    console.log('[handleGenerateVariants] ENTRY');
+    console.log('  selectedText:', selectedText?.substring(0, 50));
+    console.log('  slideId prop:', slideId);
+    console.log('  slideIndex:', slideIndex);
 
     if (!textToVariate || !slideId) {
       toast.error("No content selected");
@@ -113,9 +138,15 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
     // Store the original slide content before generating variants
     if (slideIndex !== null && presentationData?.slides) {
       const currentSlide = presentationData.slides[slideIndex];
+      console.log('[handleGenerateVariants] Capturing current slide as original');
+      console.log('  currentSlide.id:', currentSlide.id);
+      console.log('  currentSlide.content:', JSON.stringify(currentSlide.content).substring(0, 100));
+      console.log('  existing originalSlideContent.id:', originalSlideContent?.id);
+      console.log('  OVERWRITING originalSlideContent');
       setOriginalSlideContent(currentSlide);
     }
 
+    console.log('[handleGenerateVariants] Clearing cache and state');
     setIsGeneratingVariants(true);
     setVariants([]);
     setRegeneratedTextSlides([]); // Clear cache
@@ -124,6 +155,7 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
     setAppliedVariants(new Set());
 
     try {
+      console.log('[handleGenerateVariants] Calling API to generate variants');
       const response = await PresentationGenerationApi.generateTextVariants(textToVariate, 3);
 
       if (response && response.variants) {
@@ -131,18 +163,21 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
           id: `variant-${index}`,
           text,
         }));
+        console.log('[handleGenerateVariants] Generated', variantsWithIds.length, 'variants');
         setVariants(variantsWithIds);
         toast.success(`${variantsWithIds.length} text variants generated!`);
       }
+      console.log('========================================');
     } catch (error: any) {
-      console.error("Error generating variants:", error);
+      console.error('[handleGenerateVariants] ERROR:', error);
       toast.error("Failed to generate variants", {
         description: error.message || "Please try again.",
       });
+      console.log('========================================');
     } finally {
       setIsGeneratingVariants(false);
     }
-  }, [selectedText, selectedBlock?.content, slideIndex, presentationData?.slides, slideId]);
+  }, [selectedText, selectedBlock?.content, slideIndex, presentationData?.slides, slideId, originalSlideContent]);
 
   // Auto-generate text variants when content is available
   useEffect(() => {
@@ -163,7 +198,25 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
   }, [selectedBlock?.element, activeTab, layoutVariants.length, isGeneratingLayouts]);
 
   const applyVariant = async (variant: Variant, variantIndex: number) => {
-    if (!slideId || slideIndex === null) {
+    console.log('========================================');
+    console.log('[applyVariant] ENTRY');
+    console.log('  variant:', variant.id, '-', variant.text.substring(0, 50));
+    console.log('  variantIndex:', variantIndex);
+    console.log('  slideId prop:', slideId);
+    console.log('  slideIndex:', slideIndex);
+
+    if (slideIndex !== null && presentationData?.slides) {
+      const currentSlide = presentationData.slides[slideIndex];
+      console.log('  currentSlide.id from Redux:', currentSlide.id);
+    }
+
+    console.log('  originalSlideContent.id:', originalSlideContent?.id);
+    console.log('  regeneratedTextSlides cache size:', regeneratedTextSlides.length);
+    console.log('  cached slide at index?', !!regeneratedTextSlides[variantIndex]);
+
+    if (!originalSlideContent || slideIndex === null || !presentationData) {
+      console.log('[applyVariant] ERROR: Missing originalSlideContent, slideIndex, or presentationData');
+      console.log('========================================');
       toast.error("Could not identify the slide. Please try again.");
       return;
     }
@@ -176,10 +229,15 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
 
       // If not cached, generate it now
       if (!slideToApply) {
+        console.log('[applyVariant] Cache MISS - generating new variant');
         toast.info("Generating slide...");
 
         // Restore original slide to database first
         if (originalSlideContent && presentationData?.id) {
+          console.log('[applyVariant] Restoring original to database');
+          console.log('  originalSlideContent.id:', originalSlideContent.id);
+          console.log('  originalSlideContent.content:', JSON.stringify(originalSlideContent.content).substring(0, 100));
+
           const updatedSlides = [...presentationData.slides];
           updatedSlides[slideIndex] = originalSlideContent;
 
@@ -188,28 +246,49 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
             slides: updatedSlides
           });
 
+          console.log('[applyVariant] Database restore complete, waiting 100ms');
           // Give the database a moment to update
           await new Promise(resolve => setTimeout(resolve, 100));
         }
 
         // Generate the slide with this variant
         const prompt = `Replace the text "${originalText}" with this alternative version: "${variant.text}". Keep everything else on the slide unchanged.`;
-        slideToApply = await PresentationGenerationApi.editSlide(slideId, prompt);
+        console.log('[applyVariant] Calling editSlide API');
+        console.log('  slideId param (STALE PROP):', slideId);
+        console.log('  originalSlideContent.id (USING THIS):', originalSlideContent.id);
+        console.log('  prompt:', prompt.substring(0, 100));
+
+        // FIX: Use originalSlideContent.id instead of stale slideId prop
+        // The originalSlideContent was just restored to DB, so we must use its ID
+        slideToApply = await PresentationGenerationApi.editSlide(originalSlideContent.id, prompt);
+
+        console.log('[applyVariant] editSlide response:');
+        console.log('  new slide.id:', slideToApply.id);
+        console.log('  new slide.content:', JSON.stringify(slideToApply.content).substring(0, 100));
 
         // Cache it for future use
         const updatedCache = [...regeneratedTextSlides];
         updatedCache[variantIndex] = slideToApply;
         setRegeneratedTextSlides(updatedCache);
+        console.log('[applyVariant] Cached slide at index', variantIndex);
+      } else {
+        console.log('[applyVariant] Cache HIT - using cached slide');
+        console.log('  cached slide.id:', slideToApply.id);
       }
 
       // Apply the slide
+      console.log('[applyVariant] Updating Redux with slide.id:', slideToApply.id);
       dispatch(updateSlide({ index: slideIndex, slide: slideToApply }));
 
       setCurrentlyAppliedTextIndex(variantIndex);
       setAppliedVariants(new Set([variant.id]));
 
+      console.log('[applyVariant] SUCCESS');
+      console.log('========================================');
       toast.success("Variant applied!");
     } catch (error) {
+      console.error('[applyVariant] ERROR:', error);
+      console.log('========================================');
       toast.error("Failed to apply variant");
       console.error("Error applying variant:", error);
     } finally {
@@ -840,7 +919,10 @@ ${JSON.stringify(currentSlide.content, null, 2)}
                       {variants.length} variants generated
                     </p>
                     <Button
-                      onClick={handleGenerateVariants}
+                      onClick={() => {
+                        console.log('[Regenerate Button] CLICKED - calling handleGenerateVariants');
+                        handleGenerateVariants();
+                      }}
                       variant="outline"
                       size="sm"
                       disabled={isGeneratingVariants || applyingId !== null}
@@ -866,12 +948,24 @@ ${JSON.stringify(currentSlide.content, null, 2)}
                     <div className="pt-4 mt-4 border-t border-gray-200">
                       <Button
                         onClick={() => {
+                          console.log('========================================');
+                          console.log('[Restore Button] CLICKED');
+                          console.log('  slideIndex:', slideIndex);
+                          console.log('  originalSlideContent.id:', originalSlideContent?.id);
+                          console.log('  originalSlideContent.content:', JSON.stringify(originalSlideContent?.content).substring(0, 100));
+                          console.log('  currentlyAppliedTextIndex:', currentlyAppliedTextIndex);
+                          console.log('  regeneratedTextSlides cache size:', regeneratedTextSlides.length);
+
                           if (slideIndex !== null && originalSlideContent) {
                             dispatch(updateSlide({ index: slideIndex, slide: originalSlideContent }));
                             setCurrentlyAppliedTextIndex(null);
                             setAppliedVariants(new Set());
+                            setRegeneratedTextSlides([]); // FIX: Clear cache on restore
+                            console.log('[Restore Button] Restored original slide');
+                            console.log('[Restore Button] Cache cleared');
                             toast.success("Restored original content");
                           }
+                          console.log('========================================');
                         }}
                         variant="outline"
                         size="sm"
