@@ -13,6 +13,7 @@ import { usePathname } from "next/navigation";
 import { trackEvent, MixpanelEvent } from "@/utils/mixpanel";
 import { AlertCircle, Loader2, Lightbulb } from "lucide-react";
 import Help from "./Help";
+import { OverlayLoader } from "@/components/ui/overlay-loader";
 import {
   usePresentationStreaming,
   usePresentationData,
@@ -39,6 +40,7 @@ const PresentationPage: React.FC<PresentationPageProps> = ({
   const [showSuggestionsPanel, setShowSuggestionsPanel] = useState(false);
   const [isSelectionModeActive, setIsSelectionModeActive] = useState(false);
   const [showScrollIndicator, setShowScrollIndicator] = useState(true);
+  const [isConvertingSlide, setIsConvertingSlide] = useState(false);
   const {getCustomTemplateFonts} = useLayout();
 
   // Text selection hook
@@ -333,10 +335,21 @@ const PresentationPage: React.FC<PresentationPageProps> = ({
                 clearSelection();
                 clearBlockSelection();
               }}
+              onConversionStart={() => setIsConvertingSlide(true)}
+              onConversionComplete={() => setIsConvertingSlide(false)}
             />
           </div>
         )}
       </div>
+
+      {/* Conversion Loading Overlay */}
+      <OverlayLoader
+        show={isConvertingSlide}
+        text="Converting to dynamic template..."
+        showProgress={true}
+        duration={10}
+        extra_info="Capturing layout and adding data mappings"
+      />
     </div>
   );
 };

@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useCallback } from "react";
-import { Lightbulb, Palette, Loader2, X, CheckCircle2, Wand2 } from "lucide-react";
+import { Lightbulb, Palette, Loader2, X, CheckCircle2, Wand2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PresentationGenerationApi } from "../../services/api/presentation-generation";
@@ -31,6 +31,8 @@ interface SmartSuggestionsPanelProps {
   selectedBlock?: BlockSelection;
   onClose: () => void;
   clearBlockSelection?: () => void;
+  onConversionStart?: () => void;
+  onConversionComplete?: () => void;
 }
 
 const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
@@ -40,6 +42,8 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
   selectedBlock,
   onClose,
   clearBlockSelection,
+  onConversionStart,
+  onConversionComplete,
 }) => {
   const dispatch = useDispatch();
   const [activeTab, setActiveTab] = useState<"suggestions" | "variants">("suggestions");
@@ -66,6 +70,10 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
   const [currentlyAppliedIndex, setCurrentlyAppliedIndex] = useState<number | null>(null);
   const [originalLayoutSlideContent, setOriginalLayoutSlideContent] = useState<any>(null); // Store original slide before layout changes
 
+  // Conversion state - tracks if slide needs conversion to dynamic template
+  const [needsConversion, setNeedsConversion] = useState(false);
+  const [isConverting, setIsConverting] = useState(false);
+
   const { presentationData } = useSelector(
     (state: RootState) => state.presentationGeneration
   );
@@ -78,6 +86,33 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
       console.log('  slide[', slideIndex, '].id:', currentSlide?.id);
     }
   }, [presentationData, slideIndex]);
+
+  // Detect if current slide needs conversion to dynamic template
+  useEffect(() => {
+    if (slideIndex !== null && presentationData?.slides && presentationData.slides.length > 0) {
+      const currentSlide = presentationData.slides[slideIndex];
+
+      // Validate slide exists
+      if (!currentSlide) {
+        console.log('[Conversion Detection] ERROR: No slide at index', slideIndex);
+        console.log('  slides length:', presentationData.slides.length);
+        setNeedsConversion(false); // Default to false if slide not found
+        return;
+      }
+
+      // Slide needs conversion if it doesn't have html_content
+      const needsConvert = !currentSlide.html_content || currentSlide.html_content.trim() === '';
+
+      console.log('[Conversion Detection] Slide', slideIndex, 'needs conversion:', needsConvert);
+      console.log('  currentSlide.id:', currentSlide.id);
+      console.log('  has html_content:', !!currentSlide.html_content);
+      if (currentSlide.html_content) {
+        console.log('  html_content length:', currentSlide.html_content.length);
+      }
+
+      setNeedsConversion(needsConvert);
+    }
+  }, [slideIndex, presentationData]);
 
   // Detect when selection changes and regenerate variants
   useEffect(() => {
@@ -189,13 +224,7 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedText, selectedBlock?.content, activeTab, variants.length, isGeneratingVariants]);
 
-  // Auto-generate layout variants when a block is selected
-  useEffect(() => {
-    if (selectedBlock?.element && activeTab === "variants" && layoutVariants.length === 0 && !isGeneratingLayouts) {
-      handleGenerateLayoutVariants();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBlock?.element, activeTab, layoutVariants.length, isGeneratingLayouts]);
+  // Auto-generate layout variants removed - user must click "Generate Layout Options" after conversion
 
   const applyVariant = async (variant: Variant, variantIndex: number) => {
     console.log('========================================');
@@ -298,13 +327,21 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
   };
 
   const buildRegeneratedSlide = async (variant: LayoutVariant) => {
+    console.log('[buildRegeneratedSlide] ENTRY');
+    console.log('  variant:', variant.title);
+    console.log('  slideIndex:', slideIndex);
+
     if (slideIndex === null || !presentationData) {
+      console.error('[buildRegeneratedSlide] ERROR: Missing slide information');
       throw new Error("Missing slide information");
     }
 
     // Use the current slide from Redux (not the stale slideId prop)
     const currentSlide = presentationData.slides[slideIndex];
     const currentSlideId = currentSlide.id;
+
+    console.log('[buildRegeneratedSlide] Using currentSlide.id from Redux:', currentSlideId);
+    console.log('[buildRegeneratedSlide] currentSlide.content:', JSON.stringify(currentSlide.content).substring(0, 100));
 
     const prompt = `
 Regenerate this slide, changing ONLY the layout of the selected block.
@@ -330,8 +367,14 @@ ${JSON.stringify(currentSlide.content, null, 2)}
 \`\`\`
     `.trim();
 
+    console.log('[buildRegeneratedSlide] Calling editSlide with ID:', currentSlideId);
+    console.log('[buildRegeneratedSlide] Prompt length:', prompt.length);
+
     // Use the current slide ID from Redux, not the stale prop
-    return await PresentationGenerationApi.editSlide(currentSlideId, prompt);
+    const result = await PresentationGenerationApi.editSlide(currentSlideId, prompt);
+
+    console.log('[buildRegeneratedSlide] editSlide response - new slide.id:', result.id);
+    return result;
   };
 
   // Helper function to clean HTML before sending to AI
@@ -348,7 +391,7 @@ ${JSON.stringify(currentSlide.content, null, 2)}
       // Remove data-* attributes (except essential ones)
       Array.from(el.attributes).forEach(attr => {
         if (attr.name.startsWith('data-') &&
-            !['data-block-type', 'data-slide-content', 'data-textpath'].includes(attr.name)) {
+            !['data-block-type', 'data-slide-content', 'data-textpath', 'data-path'].includes(attr.name)) {
           el.removeAttribute(attr.name);
         }
       });
@@ -361,19 +404,470 @@ ${JSON.stringify(currentSlide.content, null, 2)}
       .trim();
   };
 
-  const handleGenerateLayoutVariants = useCallback(async () => {
+  // CONVERSION FUNCTION: Convert template slide to dynamic HTML mode
+  const handleConvertToDynamic = async () => {
+    console.log('========================================');
+    console.log('[Convert to Dynamic] ENTRY');
+    console.log('  slideIndex:', slideIndex);
+    console.log('  selectedBlock type:', selectedBlock?.type);
+
+    // Validation
+    if (!selectedBlock?.element || slideIndex === null || !presentationData) {
+      console.log('[Convert to Dynamic] ERROR: Missing required data');
+      console.log('  selectedBlock:', !!selectedBlock);
+      console.log('  slideIndex:', slideIndex);
+      console.log('  presentationData:', !!presentationData);
+      toast.error("Please select a block first");
+      return;
+    }
+
+    const currentSlide = presentationData.slides[slideIndex];
+
+    // Validate currentSlide exists
+    if (!currentSlide) {
+      console.log('[Convert to Dynamic] ERROR: Could not find slide at index', slideIndex);
+      console.log('  presentationData.slides length:', presentationData.slides?.length);
+      toast.error("Could not find the current slide");
+      return;
+    }
+
+    console.log('[Convert to Dynamic] Current slide ID:', currentSlide.id);
+
+    // Check if already dynamic
+    if (currentSlide.html_content && currentSlide.html_content.trim()) {
+      console.log('[Convert to Dynamic] Slide already has html_content');
+      toast.info("Slide is already dynamic");
+      setNeedsConversion(false);
+      return;
+    }
+
+    setIsConverting(true);
+
+    // Close panel and show full-screen loading overlay
+    console.log('[Convert to Dynamic] Closing panel and showing loading overlay');
+    if (onConversionStart) {
+      onConversionStart();  // Show overlay in parent
+    }
+    onClose();  // Close panel
+
+    // Small delay for panel close animation
+    await new Promise(resolve => setTimeout(resolve, 150));
+
+    try {
+      console.log('[Convert to Dynamic] Starting conversion for slide:', currentSlide.id);
+
+      // Step 1: Update Redux to ensure current state is rendered
+      console.log('[Convert to Dynamic] Step 1: Ensuring Redux is up to date');
+      dispatch(updateSlide({ index: slideIndex, slide: currentSlide }));
+
+      // Step 2: Wait for React to render
+      console.log('[Convert to Dynamic] Step 2: Waiting 300ms for React render');
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // Step 3: Find slide in DOM
+      console.log('[Convert to Dynamic] Step 3: Finding slide in DOM');
+      const slideContainer = document.querySelector(`[data-slide-id="${currentSlide.id}"]`);
+      if (!slideContainer) {
+        throw new Error(`Could not find slide container with ID ${currentSlide.id}`);
+      }
+
+      const slideContent = slideContainer.querySelector('[data-slide-content="true"]');
+      if (!slideContent) {
+        throw new Error("Could not find slide content element");
+      }
+
+      // Step 4: Clone for safe manipulation
+      console.log('[Convert to Dynamic] Step 4: Cloning slide content');
+      const clonedElement = slideContent.cloneNode(true) as HTMLElement;
+
+      const elementCount = clonedElement.querySelectorAll('*').length;
+      console.log('[Convert to Dynamic] Captured slide HTML');
+      console.log('  Total elements:', elementCount);
+      console.log('  HTML length:', clonedElement.innerHTML.length, 'characters');
+
+      // Helper function: Match text content to JSON field path
+      const matchTextToField = (text: string): string | null => {
+        const trimmedText = text.trim();
+
+        // Ignore very short text or common words
+        if (!trimmedText || trimmedText.length <= 3) {
+          return null;
+        }
+
+        // Recursive search through JSON content
+        const searchObject = (obj: any, path: string[] = []): string | null => {
+          for (const [key, value] of Object.entries(obj)) {
+            const currentPath = [...path, key];
+
+            // Direct string match
+            if (typeof value === 'string' && value.trim() === trimmedText) {
+              return currentPath.join('.');
+            }
+
+            // Recurse into arrays
+            if (Array.isArray(value)) {
+              for (let i = 0; i < value.length; i++) {
+                const result = searchObject({ [i]: value[i] }, currentPath);
+                if (result) return result;
+              }
+            }
+
+            // Recurse into objects (skip image/icon objects)
+            else if (typeof value === 'object' && value !== null) {
+              const hasImageUrl = '__image_url__' in value;
+              const hasIconUrl = '__icon_url__' in value;
+
+              // Don't search inside image/icon objects
+              if (!hasImageUrl && !hasIconUrl) {
+                const result = searchObject(value, currentPath);
+                if (result) return result;
+              }
+            }
+          }
+          return null;
+        };
+
+        return searchObject(currentSlide.content);
+      };
+
+      console.log('[Convert to Dynamic] matchTextToField helper created');
+
+      // Step 5: Add data-textpath attributes to all text elements
+      console.log('[Convert to Dynamic] Step 5: Adding data-textpath mappings');
+
+      const allElements = clonedElement.querySelectorAll('*');
+      let textMappingsAdded = 0;
+
+      // Only add data-textpath to actual TEXT elements, not containers
+      // Query specific text tags + divs that might be text containers
+      const textElements = clonedElement.querySelectorAll('h1, h2, h3, h4, h5, h6, p, span, li, td, th, a, div');
+
+      textElements.forEach((el) => {
+        const htmlEl = el as HTMLElement;
+
+        // Skip if already has data-textpath
+        if (htmlEl.hasAttribute('data-textpath')) {
+          return;
+        }
+
+        // Skip wrapper divs - only process divs that are likely text containers
+        if (htmlEl.tagName === 'DIV') {
+          // Skip if has many children (it's a layout container)
+          if (htmlEl.children.length > 2) {
+            return;
+          }
+          // Skip if has specific wrapper classes
+          const classes = htmlEl.className || '';
+          if (classes.includes('editable-layout-wrapper') ||
+              classes.includes('tiptap-text-replacer') ||
+              classes.includes('flex') ||
+              classes.includes('grid') ||
+              classes.includes('relative')) {
+            return;
+          }
+        }
+
+        let textContent = '';
+
+        // Case 1: Element has Tiptap editor (template rendering)
+        const tiptapEditor = htmlEl.querySelector('.tiptap-text-editor');
+        if (tiptapEditor) {
+          const proseMirror = tiptapEditor.querySelector('.ProseMirror');
+          textContent = proseMirror?.textContent?.trim() || '';
+        }
+        // Case 2: Plain text (no Tiptap)
+        else {
+          // Get direct text nodes only (not deeply nested)
+          const directText = Array.from(htmlEl.childNodes)
+            .filter(node => node.nodeType === Node.TEXT_NODE)
+            .map(node => node.textContent)
+            .join('').trim();
+
+          if (directText) {
+            textContent = directText;
+          }
+          // If no direct text but also no images/children, use all text
+          else if (!htmlEl.querySelector('img, svg') && htmlEl.children.length === 0) {
+            textContent = htmlEl.textContent?.trim() || '';
+          }
+        }
+
+        // Try to match text to JSON field
+        if (textContent && textContent.length > 3) {
+          const matchedField = matchTextToField(textContent);
+          if (matchedField) {
+            htmlEl.setAttribute('data-textpath', matchedField);
+            textMappingsAdded++;
+
+            if (textMappingsAdded <= 5) {
+              console.log(`  [${textMappingsAdded}] Mapped "${textContent.substring(0, 30)}" → ${matchedField}`);
+            }
+          }
+        }
+      });
+
+      console.log('[Convert to Dynamic] Added', textMappingsAdded, 'data-textpath attributes');
+
+      // Helper function: Match image URL to JSON field path
+      const matchImageToPath = (imgSrc: string): string | null => {
+        if (!imgSrc || !currentSlide.content) {
+          return null;
+        }
+
+        const searchObject = (obj: any, path: string[] = []): string | null => {
+          for (const [key, value] of Object.entries(obj)) {
+            const currentPath = [...path, key];
+
+            // Direct URL match (string field)
+            if (typeof value === 'string' && value === imgSrc) {
+              return currentPath.join('.');
+            }
+
+            // Image object match
+            if (typeof value === 'object' && value !== null) {
+              if ('__image_url__' in value && value.__image_url__ === imgSrc) {
+                return currentPath.join('.');
+              }
+              if ('__icon_url__' in value && value.__icon_url__ === imgSrc) {
+                return currentPath.join('.');
+              }
+
+              // Recurse (skip if already an image/icon object)
+              if (!('__image_url__' in value) && !('__icon_url__' in value)) {
+                const result = searchObject(value, currentPath);
+                if (result) return result;
+              }
+            }
+
+            // Recurse into arrays
+            if (Array.isArray(value)) {
+              for (let i = 0; i < value.length; i++) {
+                const result = searchObject({ [i]: value[i] }, currentPath);
+                if (result) return result;
+              }
+            }
+          }
+          return null;
+        };
+
+        return searchObject(currentSlide.content);
+      };
+
+      console.log('[Convert to Dynamic] matchImageToPath helper created');
+
+      // Step 6: Add data-path attributes to images and icons
+      console.log('[Convert to Dynamic] Step 6: Adding data-path mappings');
+
+      const imageElements = clonedElement.querySelectorAll('img, svg, span[role="img"]');
+      let imageMappingsAdded = 0;
+
+      imageElements.forEach((imgOrSvg) => {
+        const htmlEl = imgOrSvg as HTMLElement;
+        const tagName = htmlEl.tagName.toLowerCase();
+        const isImg = tagName === 'img';
+        const isIconSpan = tagName === 'span' && htmlEl.getAttribute('role') === 'img';
+
+        // Skip if already has data-path
+        if (htmlEl.hasAttribute('data-path')) {
+          return;
+        }
+
+        // Extract image URL
+        let imgSrc = '';
+        if (isImg) {
+          imgSrc = (htmlEl as HTMLImageElement).src || '';
+        } else if (isIconSpan) {
+          const existingDataPath = htmlEl.getAttribute('data-path');
+          if (existingDataPath && (existingDataPath.includes('http') || existingDataPath.includes('/'))) {
+            imgSrc = existingDataPath;
+          }
+        }
+
+        // Try to match URL to path
+        if (imgSrc) {
+          const matchedPath = matchImageToPath(imgSrc);
+          if (matchedPath) {
+            htmlEl.setAttribute('data-path', matchedPath);
+            imageMappingsAdded++;
+
+            if (imageMappingsAdded <= 5) {
+              console.log(`  [${imageMappingsAdded}] Mapped image "${imgSrc.substring(0, 50)}" → ${matchedPath}`);
+            }
+          }
+        }
+        // Special case: SVG icons without src (match by nearby text)
+        else if (!isImg && currentSlide.content) {
+          const nearbyH3 = htmlEl.closest('[class*="flex"], [class*="grid"]')?.querySelector('h3');
+          const nearbyTitle = nearbyH3?.textContent?.trim() || '';
+
+          if (nearbyTitle) {
+            const bulletPoints = currentSlide.content.bulletPoints;
+            if (Array.isArray(bulletPoints)) {
+              for (let i = 0; i < bulletPoints.length; i++) {
+                if (bulletPoints[i]?.title === nearbyTitle) {
+                  htmlEl.setAttribute('data-path', `bulletPoints.${i}.icon`);
+                  imageMappingsAdded++;
+                  console.log(`  [${imageMappingsAdded}] Mapped icon by nearby text "${nearbyTitle}" → bulletPoints.${i}.icon`);
+                  break;
+                }
+              }
+            }
+          }
+        }
+      });
+
+      console.log('[Convert to Dynamic] Added', imageMappingsAdded, 'data-path attributes');
+
+      // Step 7: Remove Tiptap editor infrastructure
+      console.log('[Convert to Dynamic] Step 7: Removing Tiptap infrastructure');
+
+      const editableElements = clonedElement.querySelectorAll('[data-textpath]');
+      let tiptapRemoved = 0;
+
+      editableElements.forEach((el) => {
+        const htmlEl = el as HTMLElement;
+
+        // Find Tiptap editor wrapper - must be DIRECT CHILD
+        const directTiptapEditor = Array.from(htmlEl.children).find(
+          child => child.classList.contains('tiptap-text-editor')
+        );
+
+        if (directTiptapEditor) {
+          // Extract text from ProseMirror
+          const proseMirror = directTiptapEditor.querySelector('.ProseMirror');
+          const textContent = proseMirror?.textContent || directTiptapEditor.textContent || '';
+
+          // Replace ONLY the Tiptap wrapper with plain text (keep other children)
+          directTiptapEditor.replaceWith(document.createTextNode(textContent));
+          tiptapRemoved++;
+
+          if (tiptapRemoved <= 5) {
+            console.log(`  [${tiptapRemoved}] Removed Tiptap, kept text: "${textContent.substring(0, 30)}"`);
+          }
+        }
+      });
+
+      console.log('[Convert to Dynamic] Removed Tiptap from', tiptapRemoved, 'elements');
+
+      // Step 8: Extract final HTML
+      const html_content = clonedElement.innerHTML;
+
+      console.log('[Convert to Dynamic] Step 8: Extracted final HTML');
+      console.log('  HTML length:', html_content.length, 'characters');
+      console.log('  Summary:');
+      console.log('    - Text mappings (data-textpath):', textMappingsAdded);
+      console.log('    - Image mappings (data-path):', imageMappingsAdded);
+      console.log('    - Tiptap removed from:', tiptapRemoved, 'elements');
+
+      // Step 9: Save to database
+      console.log('[Convert to Dynamic] Step 9: Saving to database via saveHtmlVariant');
+      const dynamicSlide = await PresentationGenerationApi.saveHtmlVariant(
+        currentSlide.id,
+        html_content
+      );
+
+      console.log('[Convert to Dynamic] Saved successfully');
+      console.log('  New slide ID:', dynamicSlide.id);
+      console.log('  Has html_content:', !!dynamicSlide.html_content);
+      console.log('  HTML length:', dynamicSlide.html_content?.length);
+
+      // Step 10: Update Redux with dynamic slide
+      console.log('[Convert to Dynamic] Step 10: Updating Redux');
+      dispatch(updateSlide({ index: slideIndex, slide: dynamicSlide }));
+
+      console.log('[Convert to Dynamic] Redux update dispatched');
+
+      toast.success("Converted to dynamic template!");
+
+      // Step 11: Save initial converted state as restore point
+      console.log('[Convert to Dynamic] Step 11: Saving as original layout (restore point)');
+      setOriginalLayoutSlideContent(dynamicSlide);
+      console.log('  originalLayoutSlideContent saved with ID:', dynamicSlide.id);
+
+      // Clear conversion flag (slide is now permanently dynamic)
+      setNeedsConversion(false);
+
+      console.log('[Convert to Dynamic] COMPLETE!');
+      console.log('  Slide is now PERMANENTLY dynamic');
+      console.log('  No way back to template mode');
+      console.log('  User can now select a block and click "Generate Layout Options"');
+      console.log('========================================');
+
+      // Hide loading overlay
+      if (onConversionComplete) {
+        onConversionComplete();
+      }
+
+      // Show success message with instruction
+      toast.success("Slide converted to dynamic template!", {
+        description: "Select a block (Ctrl/Cmd + Click) to generate layout variants",
+        duration: 5000
+      });
+
+      // Do NOT auto-generate - user must manually click "Generate Layout Options"
+      // Reason: After conversion, selectedBlock.element becomes stale (detached from DOM)
+      // User needs to re-select the block first
+
+    } catch (error: any) {
+      console.error('[Convert to Dynamic] ERROR:', error);
+      console.log('[Convert to Dynamic] Error details:', JSON.stringify(error, null, 2));
+      console.log('========================================');
+
+      // Hide loading overlay on error
+      if (onConversionComplete) {
+        onConversionComplete();
+      }
+
+      toast.error(`Failed to convert: ${error.message || 'Unknown error'}`);
+    } finally {
+      setIsConverting(false);
+    }
+  };
+
+  const handleGenerateLayoutVariants = useCallback(async (skipValidation = false) => {
+    console.log('========================================');
+    console.log('[handleGenerateLayoutVariants] ENTRY');
+    console.log('  selectedBlock type:', selectedBlock?.type);
+    console.log('  slideId prop:', slideId);
+    console.log('  slideIndex:', slideIndex);
+    console.log('  skipValidation:', skipValidation);
+
     if (!selectedBlock?.element) {
+      console.log('[handleGenerateLayoutVariants] ERROR: No block selected');
       toast.error("No block selected");
       return;
+    }
+
+    // NEW VALIDATION: Slide must have html_content (unless called from conversion)
+    if (!skipValidation && slideIndex !== null && presentationData?.slides) {
+      const currentSlide = presentationData.slides[slideIndex];
+
+      if (!currentSlide || !currentSlide.html_content || !currentSlide.html_content.trim()) {
+        console.log('[handleGenerateLayoutVariants] ERROR: Slide does not have html_content');
+        console.log('[handleGenerateLayoutVariants] User should convert to dynamic first');
+        console.log('========================================');
+        toast.error("Please convert to dynamic template first");
+        return;
+      }
+
+      console.log('[handleGenerateLayoutVariants] Slide has html_content, proceeding');
+      console.log('  html_content length:', currentSlide.html_content.length);
+    } else if (skipValidation) {
+      console.log('[handleGenerateLayoutVariants] Validation skipped (called from conversion)');
     }
 
     // Store the original slide content before generating variants
     if (slideIndex !== null && presentationData?.slides) {
       const currentSlide = presentationData.slides[slideIndex];
+      console.log('[handleGenerateLayoutVariants] Capturing current slide as original layout');
+      console.log('  currentSlide.id:', currentSlide.id);
+      console.log('  currentSlide.content:', JSON.stringify(currentSlide.content).substring(0, 100));
+      console.log('  existing originalLayoutSlideContent.id:', originalLayoutSlideContent?.id);
+      console.log('  OVERWRITING originalLayoutSlideContent');
       setOriginalLayoutSlideContent(currentSlide);
-      console.log('[SmartSuggestions] Stored original layout slide content');
     }
 
+    console.log('[handleGenerateLayoutVariants] Clearing cache and state');
     setIsGeneratingLayouts(true);
     setLayoutVariants([]);
     setRegeneratedSlides([]); // Clear cache
@@ -387,6 +881,25 @@ ${JSON.stringify(currentSlide.content, null, 2)}
       // Capture element dimensions
       const availableWidth = blockElement.offsetWidth;
       const availableHeight = blockElement.offsetHeight;
+
+      console.log('[handleGenerateLayoutVariants] Element dimensions:');
+      console.log('  availableWidth:', availableWidth);
+      console.log('  availableHeight:', availableHeight);
+      console.log('  blockElement.offsetParent:', blockElement.offsetParent);
+      console.log('  blockElement.clientWidth:', blockElement.clientWidth);
+      console.log('  blockElement.clientHeight:', blockElement.clientHeight);
+
+      // Validate dimensions
+      if (availableWidth <= 0 || availableHeight <= 0) {
+        console.log('[handleGenerateLayoutVariants] ERROR: Invalid dimensions');
+        console.log('  This usually means the element is not visible or not rendered');
+        console.log('========================================');
+        toast.error("Cannot capture element dimensions", {
+          description: "The selected block is not visible. Please ensure the slide is fully rendered.",
+        });
+        setIsGeneratingLayouts(false);
+        return;
+      }
 
       // Get parent container information
       const parentElement = blockElement.parentElement;
@@ -416,6 +929,16 @@ ${JSON.stringify(currentSlide.content, null, 2)}
         }
       }
 
+      console.log('[handleGenerateLayoutVariants] Calling API to generate layout variants');
+      console.log('[handleGenerateLayoutVariants] API parameters:');
+      console.log('  blockHTML length:', blockHTML.length);
+      console.log('  fullSlideHTML length:', fullSlideHTML.length);
+      console.log('  blockType:', blockType);
+      console.log('  availableWidth:', availableWidth);
+      console.log('  availableHeight:', availableHeight);
+      console.log('  parentContainerInfo:', parentContainerInfo);
+      console.log('  count: 3');
+
       const response = await PresentationGenerationApi.generateLayoutVariants(
         blockHTML,
         fullSlideHTML,
@@ -425,8 +948,10 @@ ${JSON.stringify(currentSlide.content, null, 2)}
         parentContainerInfo,
         3
       );
+      console.log('[handleGenerateLayoutVariants] API call succeeded');
 
       if (response && response.variants) {
+        console.log('[handleGenerateLayoutVariants] Generated', response.variants.length, 'variants');
         // Use the ORIGINAL fullSlideHTML for preview generation (not cleaned)
         const variantsWithIds = response.variants.map((variant: any, index: number) => {
           // Generate full preview HTML by replacing the original block with the variant
@@ -471,303 +996,155 @@ ${JSON.stringify(currentSlide.content, null, 2)}
         setLayoutVariants(variantsWithIds);
         toast.success(`${variantsWithIds.length} layout variants generated!`);
       }
+      console.log('========================================');
     } catch (error: any) {
-      console.error("Error generating layout variants:", error);
+      console.error('[handleGenerateLayoutVariants] ERROR:', error);
+      console.log('========================================');
       toast.error("Failed to generate layout variants", {
         description: error.message || "Please try again.",
       });
     } finally {
       setIsGeneratingLayouts(false);
     }
-  }, [selectedBlock?.element, selectedBlock?.type, slideId]);
+  }, [selectedBlock?.element, selectedBlock?.type, slideId, presentationData, slideIndex, originalLayoutSlideContent]);
 
+  // SIMPLIFIED APPLY FUNCTION: HTML-to-HTML replacement (post-conversion)
   const applyLayoutVariant = async (variant: LayoutVariant, variantIndex: number) => {
+    console.log('========================================');
+    console.log('[applyLayoutVariant] ENTRY');
+    console.log('  variant:', variant.id, '-', variant.title);
+    console.log('  variantIndex:', variantIndex);
+    console.log('  slideIndex:', slideIndex);
+
+    // Validation: slideIndex and presentationData required
     if (slideIndex === null || !presentationData) {
-      toast.error("Could not identify the slide. Please try again.");
+      console.log('[applyLayoutVariant] ERROR: Missing slideIndex or presentationData');
+      console.log('========================================');
+      toast.error("Could not identify the slide");
       return;
     }
 
-    // IMPORTANT: Use the current slide ID from Redux, not the prop
-    // The prop becomes stale after the first variant is applied (backend assigns new UUID)
     const currentSlide = presentationData.slides[slideIndex];
-    const currentSlideId = currentSlide.id;
 
-    // Set applying state to disable all actions
+    // Validate currentSlide exists
+    if (!currentSlide) {
+      console.log('[applyLayoutVariant] ERROR: Could not find slide at index', slideIndex);
+      console.log('  presentationData.slides length:', presentationData.slides?.length);
+      console.log('========================================');
+      toast.error("Could not find the current slide");
+      return;
+    }
+
+    console.log('[applyLayoutVariant] Current slide ID:', currentSlide.id);
+    console.log('[applyLayoutVariant] Has html_content:', !!currentSlide.html_content);
+
+    // CRITICAL VALIDATION: Must have html_content (ensured by conversion)
+    if (!currentSlide.html_content || !currentSlide.html_content.trim()) {
+      console.log('[applyLayoutVariant] ERROR: Slide does not have html_content');
+      console.log('[applyLayoutVariant] This should not happen - conversion should run first');
+      console.log('========================================');
+      toast.error("Slide must be converted to dynamic template first");
+      return;
+    }
+
+    // Validation: Selected block required
+    if (!selectedBlock?.element) {
+      console.log('[applyLayoutVariant] ERROR: No block selected');
+      console.log('========================================');
+      toast.error("No block selected");
+      return;
+    }
+
+    console.log('[applyLayoutVariant] All validations passed');
+    console.log('  Current html_content length:', currentSlide.html_content.length);
+    console.log('  Selected block type:', selectedBlock.type);
+
     setApplyingId(variant.id);
 
     try {
-      let slideToApply = regeneratedSlides[variantIndex];
+      console.log('[applyLayoutVariant] Starting HTML replacement');
 
-      // If not cached, generate it now
-      if (!slideToApply) {
-        toast.info("Generating layout...");
+      // Get the selected block's HTML from DOM
+      const selectedBlockHTML = selectedBlock.element.outerHTML;
+      console.log('[applyLayoutVariant] Selected block HTML length:', selectedBlockHTML.length);
+      console.log('[applyLayoutVariant] Selected block preview:', selectedBlockHTML.substring(0, 150), '...');
 
-        slideToApply = await buildRegeneratedSlide(variant);
+      // Clean both HTMLs for matching
+      const cleanedBlockHTML = cleanHTMLForAI(selectedBlockHTML);
+      const cleanedVariantHTML = cleanHTMLForAI(variant.html);
 
-        // Cache it for future use
-        const updatedCache = [...regeneratedSlides];
-        updatedCache[variantIndex] = slideToApply;
-        setRegeneratedSlides(updatedCache);
-      }
+      console.log('[applyLayoutVariant] Cleaned HTML lengths:');
+      console.log('  Cleaned block:', cleanedBlockHTML.length);
+      console.log('  Cleaned variant:', cleanedVariantHTML.length);
 
-      // Apply the slide (update JSON content)
-      dispatch(updateSlide({ index: slideIndex, slide: slideToApply }));
+      // SIMPLE HTML REPLACEMENT
+      // Replace the selected block in current html_content with variant.html
+      let updatedHTML = currentSlide.html_content.replace(
+        cleanedBlockHTML,
+        cleanedVariantHTML
+      );
 
-      // Wait for React to re-render the slide with new content
-      await new Promise(resolve => setTimeout(resolve, 300));
+      // Verify replacement happened
+      if (updatedHTML === currentSlide.html_content) {
+        console.log('[applyLayoutVariant] WARNING: HTML replacement did not change content');
+        console.log('[applyLayoutVariant] Cleaned replacement failed, trying with uncleaned HTML...');
 
-      // Automatically capture and save as HTML variant
-      try {
-        // Find the slide container using the updated slide ID
-        const slideContainer = document.querySelector(`[data-slide-id="${slideToApply.id}"]`);
+        // Fallback: Try with original HTML (might have slight differences in cleaning)
+        updatedHTML = currentSlide.html_content.replace(
+          selectedBlockHTML,
+          variant.html
+        );
 
-        if (slideContainer) {
-          // Get only the slide content, not the control buttons
-          const slideContentElement = slideContainer.querySelector('[data-slide-content="true"]');
-
-          if (slideContentElement) {
-            // IMPORTANT: Clean the HTML before saving
-            // Add data-textpath attributes to Tiptap editors, then remove editor infrastructure
-            const cleanedElement = slideContentElement.cloneNode(true) as HTMLElement;
-
-            // STEP 1: Add data-textpath attributes to ALL text elements based on content matching
-            // This works for both traditional templates (with Tiptap editors) AND dynamic layouts (plain text)
-
-            // Helper: Match text content to slide data fields (with recursive nested search)
-            const matchTextToField = (text: string): string | null => {
-              if (!text || !slideToApply.content) return null;
-
-              const trimmedText = text.trim();
-
-              // Recursive search through object/arrays
-              const searchObject = (obj: any, path: string[] = []): string | null => {
-                for (const [key, value] of Object.entries(obj)) {
-                  const currentPath = [...path, key];
-
-                  if (typeof value === 'string' && value.trim() === trimmedText) {
-                    return currentPath.join('.');
-                  }
-
-                  if (Array.isArray(value)) {
-                    for (let i = 0; i < value.length; i++) {
-                      const result = searchObject({ [i]: value[i] }, currentPath);
-                      if (result) return result;
-                    }
-                  } else if (typeof value === 'object' && value !== null) {
-                    // Skip image/icon objects (they contain metadata, not editable text)
-                    const hasImageUrl = '__image_url__' in value;
-                    const hasIconUrl = '__icon_url__' in value;
-                    if (!hasImageUrl && !hasIconUrl) {
-                      const result = searchObject(value, currentPath);
-                      if (result) return result;
-                    }
-                  }
-                }
-                return null;
-              };
-
-              return searchObject(slideToApply.content);
-            };
-
-            // Find all potential text elements (h1-h6, p, div with text)
-            const allElements = cleanedElement.querySelectorAll('h1, h2, h3, h4, h5, h6, p, div');
-            allElements.forEach((element) => {
-              const el = element as HTMLElement;
-
-              // Skip if already has data-textpath
-              if (el.hasAttribute('data-textpath')) return;
-
-              // Get text from either Tiptap editor OR plain text
-              let textContent = '';
-              const tiptapEditor = el.querySelector('.tiptap-text-editor');
-              if (tiptapEditor) {
-                const proseMirror = tiptapEditor.querySelector('.ProseMirror');
-                textContent = proseMirror?.textContent?.trim() || '';
-              } else {
-                // Get direct text (not from deeply nested children)
-                const directText = Array.from(el.childNodes)
-                  .filter(node => node.nodeType === Node.TEXT_NODE)
-                  .map(node => node.textContent)
-                  .join('').trim();
-
-                if (directText) {
-                  textContent = directText;
-                } else if (!el.querySelector('img, svg') && el.children.length === 0) {
-                  // If no images and no children, use all text
-                  textContent = el.textContent?.trim() || '';
-                }
-              }
-
-              // Try to match this text to a content field
-              if (textContent && textContent.length > 3) {
-                const matchedField = matchTextToField(textContent);
-                if (matchedField) {
-                  el.setAttribute('data-textpath', matchedField);
-                  console.log(`[HTML Capture] Added data-textpath="${matchedField}" to <${el.tagName}>`);
-                }
-              }
-            });
-
-            // STEP 1b: Find all image/icon elements (img, svg, span with role="img") and add data-path attributes
-            const imageElements = cleanedElement.querySelectorAll('img, svg, span[role="img"]');
-            imageElements.forEach((imgOrSvg) => {
-              // For IMG: use src attribute
-              // For SPAN with role="img": icon URL might be in data-path or aria-label
-              // For SVG: inline, match by context
-              const tagName = imgOrSvg.tagName.toLowerCase();
-              const isImg = tagName === 'img';
-              const isIconSpan = tagName === 'span' && imgOrSvg.getAttribute('role') === 'img';
-
-              // Get the image/icon URL
-              let imgSrc = '';
-              if (isImg) {
-                imgSrc = imgOrSvg.getAttribute('src') || '';
-              } else if (isIconSpan) {
-                // For icon spans, the URL might be in existing data-path (we want to replace it with field path)
-                const existingDataPath = imgOrSvg.getAttribute('data-path');
-                if (existingDataPath && (existingDataPath.includes('http') || existingDataPath.includes('/'))) {
-                  imgSrc = existingDataPath; // Use the URL to match against slide content
-                }
-              }
-
-              if (imgSrc && slideToApply.content) {
-                // Recursively match image src to field path
-                const matchImageToPath = (obj: any, path: string[] = []): string | null => {
-                  for (const [key, value] of Object.entries(obj)) {
-                    const currentPath = [...path, key];
-
-                    // Check if this value matches the image src
-                    if (typeof value === 'string' && value === imgSrc) {
-                      return currentPath.join('.');
-                    }
-
-                    // Check if it's an image/icon object with __image_url__ or __icon_url__
-                    if (typeof value === 'object' && value !== null) {
-                      const hasImageUrl = '__image_url__' in value;
-                      const hasIconUrl = '__icon_url__' in value;
-
-                      if (hasImageUrl && (value as any).__image_url__ === imgSrc) {
-                        return currentPath.join('.');
-                      }
-                      if (hasIconUrl && (value as any).__icon_url__ === imgSrc) {
-                        return currentPath.join('.');
-                      }
-
-                      // Recursively search nested objects (skip if it's an image/icon metadata object)
-                      if (!hasImageUrl && !hasIconUrl) {
-                        const result = matchImageToPath(value, currentPath);
-                        if (result) return result;
-                      }
-                    }
-
-                    // Check arrays
-                    if (Array.isArray(value)) {
-                      for (let i = 0; i < value.length; i++) {
-                        const result = matchImageToPath({ [i]: value[i] }, currentPath);
-                        if (result) return result;
-                      }
-                    }
-                  }
-                  return null;
-                };
-
-                const matchedPath = matchImageToPath(slideToApply.content);
-
-                // Add/update data-path on the image element if we found a match
-                if (matchedPath) {
-                  const existingPath = imgOrSvg.getAttribute('data-path');
-                  // Update if no data-path exists, OR if existing one is a URL (not a field path)
-                  if (!existingPath || existingPath.includes('http') || existingPath.includes('/')) {
-                    imgOrSvg.setAttribute('data-path', matchedPath);
-                    console.log(`[HTML Capture] ${existingPath ? 'Updated' : 'Added'} data-path="${matchedPath}" to <${imgOrSvg.tagName}> src="${imgSrc.substring(0, 60)}..."`);
-                  }
-                }
-              } else if (!isImg && slideToApply.content) {
-                // For SVG elements (icons), try to match based on position/index
-                // Since SVGs are inline and don't have src, we need a different approach
-                // Try to find this icon by matching nearby text (h3 title)
-                const nearbyH3 = imgOrSvg.closest('[class*="flex"], [class*="grid"]')?.querySelector('h3');
-                const nearbyTitle = nearbyH3?.textContent?.trim() || '';
-
-                if (nearbyTitle) {
-                  // Search for bulletPoints with this title
-                  const bulletPoints = slideToApply.content.bulletPoints;
-                  if (Array.isArray(bulletPoints)) {
-                    for (let i = 0; i < bulletPoints.length; i++) {
-                      if (bulletPoints[i]?.title === nearbyTitle) {
-                        const iconPath = `bulletPoints[${i}].icon`;
-                        if (!imgOrSvg.hasAttribute('data-path')) {
-                          imgOrSvg.setAttribute('data-path', iconPath);
-                          console.log(`[HTML Capture] Added data-path="${iconPath}" to <SVG> near title "${nearbyTitle}"`);
-                        }
-                        break;
-                      }
-                    }
-                  }
-                }
-              }
-            });
-
-            // STEP 2: Clean elements that now have data-textpath
-            const editableElements = cleanedElement.querySelectorAll('[data-textpath]');
-            editableElements.forEach(el => {
-              const htmlEl = el as HTMLElement;
-
-              // Check if this element contains a Tiptap editor
-              const tiptapEditor = htmlEl.querySelector('.tiptap-text-editor');
-              if (tiptapEditor) {
-                // Extract clean text content from the ProseMirror editor
-                const proseMirror = tiptapEditor.querySelector('.ProseMirror');
-                const textContent = proseMirror?.textContent || htmlEl.textContent || '';
-
-                // Replace the entire Tiptap infrastructure with clean text
-                htmlEl.innerHTML = textContent;
-              }
-            });
-
-            const html_content = cleanedElement.innerHTML;
-
-            // DEBUG: Log the actual captured HTML
-            console.log("========================================");
-            console.log("CAPTURED HTML SAMPLE (first 2000 chars):");
-            console.log(html_content.substring(0, 2000));
-            console.log("========================================");
-            console.log("FULL HTML LENGTH:", html_content.length, "characters");
-            console.log("========================================");
-
-            // Save the rendered HTML as variant
-            const htmlSlide = await PresentationGenerationApi.saveHtmlVariant(
-              slideToApply.id,
-              html_content
-            );
-
-            // Update Redux with HTML-enabled slide
-            // This gives the slide a new UUID, but we'll use Redux to track it
-            dispatch(updateSlide({ index: slideIndex, slide: htmlSlide }));
-
-            console.log("Layout variant automatically saved as HTML (content only)");
-            console.log("New slide ID after save:", htmlSlide.id);
-          } else {
-            console.warn("Could not find slide content element");
-          }
-        } else {
-          console.warn("Could not find slide container to capture HTML");
+        if (updatedHTML === currentSlide.html_content) {
+          console.log('[applyLayoutVariant] ERROR: Both replacement attempts failed');
+          console.log('[applyLayoutVariant] Selected block HTML not found in slide html_content');
+          console.log('========================================');
+          throw new Error("Could not find selected block in slide HTML. Try selecting the block again.");
         }
-      } catch (htmlError) {
-        console.error("Error saving HTML variant:", htmlError);
-        // Don't fail the whole operation if HTML save fails
-        // The JSON variant is still applied successfully
+
+        console.log('[applyLayoutVariant] Uncleaned replacement succeeded');
       }
 
-      setCurrentlyAppliedIndex(variantIndex);
-      setAppliedLayouts(prev => new Set(prev).add(variant.id));
+      console.log('[applyLayoutVariant] HTML replacement successful');
+      console.log('  Updated HTML length:', updatedHTML.length);
+      console.log('  Changed by:', updatedHTML.length - currentSlide.html_content.length, 'characters');
 
-      toast.success(`Layout "${variant.title}" applied as HTML variant!`);
-    } catch (error) {
-      toast.error("Failed to apply layout");
-      console.error("Error applying layout:", error);
+      // Save the updated HTML (single API call)
+      console.log('[applyLayoutVariant] Saving updated HTML to database');
+      console.log('  Calling saveHtmlVariant with slide ID:', currentSlide.id);
+
+      const updatedSlide = await PresentationGenerationApi.saveHtmlVariant(
+        currentSlide.id,
+        updatedHTML
+      );
+
+      console.log('[applyLayoutVariant] Saved to database successfully');
+      console.log('  New slide ID:', updatedSlide.id);
+      console.log('  Has html_content:', !!updatedSlide.html_content);
+
+      // Update Redux with new slide
+      console.log('[applyLayoutVariant] Updating Redux');
+      dispatch(updateSlide({ index: slideIndex, slide: updatedSlide }));
+      console.log('[applyLayoutVariant] Redux updated');
+
+      // Update state
+      setCurrentlyAppliedIndex(variantIndex);
+      setAppliedLayouts(new Set([variant.id]));
+
+      console.log('[applyLayoutVariant] SUCCESS - Layout variant applied');
+      console.log('  Applied variant index:', variantIndex);
+      console.log('  Applied variant ID:', variant.id);
+      console.log('========================================');
+
+      toast.success(`Applied: ${variant.title}`);
+
+    } catch (error: any) {
+      console.error('[applyLayoutVariant] ERROR:', error);
+      console.log('[applyLayoutVariant] Error details:', JSON.stringify(error, null, 2));
+      console.log('========================================');
+      toast.error(`Failed to apply variant: ${error.message || 'Unknown error'}`);
     } finally {
-      // Clear applying state to re-enable actions
+      console.log('[applyLayoutVariant] Clearing applyingId');
       setApplyingId(null);
     }
   };
@@ -788,7 +1165,16 @@ ${JSON.stringify(currentSlide.content, null, 2)}
   };
 
   const handleRestoreOriginalLayout = async () => {
+    console.log('========================================');
+    console.log('[Restore Layout Button] CLICKED');
+    console.log('  Restoring to initial converted state (originalLayoutSlideContent)');
+    console.log('  originalLayoutSlideContent.id:', originalLayoutSlideContent?.id);
+
     if (!originalLayoutSlideContent || slideIndex === null) {
+      console.log('[Restore Layout Button] ERROR: Missing originalLayoutSlideContent or slideIndex');
+      console.log('  originalLayoutSlideContent exists:', !!originalLayoutSlideContent);
+      console.log('  slideIndex:', slideIndex);
+      console.log('========================================');
       toast.error("No original layout to restore");
       return;
     }
@@ -796,34 +1182,40 @@ ${JSON.stringify(currentSlide.content, null, 2)}
     setApplyingId("restoring");
 
     try {
-      // Restore the original slide content
+      // Restore to initial converted state (still has html_content)
+      console.log('[Restore Layout Button] Dispatching updateSlide to Redux');
+      console.log('  Restoring slide with ID:', originalLayoutSlideContent.id);
+      console.log('  has html_content:', !!originalLayoutSlideContent.html_content);
+
       dispatch(updateSlide({ index: slideIndex, slide: originalLayoutSlideContent }));
 
-      // Wait for React to re-render
-      await new Promise(resolve => setTimeout(resolve, 200));
+      console.log('[Restore Layout Button] Restored to initial converted state');
+      console.log('  Slide is STILL in dynamic mode');
+      console.log('  html_content preserved:', !!originalLayoutSlideContent.html_content);
 
-      // If the original had html_content, we need to clear it to revert to template rendering
-      // Call the API to clear html_content (pass empty string)
-      if (originalLayoutSlideContent.html_content) {
-        const clearedSlide = await PresentationGenerationApi.saveHtmlVariant(
-          originalLayoutSlideContent.id,
-          '' // Empty string clears html_content and reverts to template
-        );
-
-        // Update Redux with the cleared slide
-        dispatch(updateSlide({ index: slideIndex, slide: clearedSlide }));
-      }
-
-      // Reset state
+      // Reset APPLIED state only (NOT variant generation state)
       setCurrentlyAppliedIndex(null);
       setAppliedLayouts(new Set());
-      setLayoutVariants([]);
-      setRegeneratedSlides([]);
 
-      toast.success("Restored original layout");
+      // DO NOT clear layoutVariants (keep variants visible)
+      // DO NOT clear regeneratedSlides (keep cache)
+      // DO NOT set needsConversion = true
+      // Slide stays in dynamic mode after restore
+      // User can try different variants without regenerating
+
+      console.log('[Restore Layout Button] SUCCESS');
+      console.log('  currentlyAppliedIndex: null');
+      console.log('  appliedLayouts: cleared');
+      console.log('  layoutVariants: KEPT (still visible)');
+      console.log('  needsConversion: false (stays dynamic)');
+      console.log('========================================');
+
+      toast.success("Restored to initial layout");
     } catch (error) {
-      console.error("Error restoring original layout:", error);
-      toast.error("Failed to restore original layout");
+      console.error('[Restore Layout Button] ERROR:', error);
+      console.log('[Restore Layout Button] Error details:', JSON.stringify(error, null, 2));
+      console.log('========================================');
+      toast.error("Failed to restore layout");
     } finally {
       setApplyingId(null);
     }
@@ -994,8 +1386,47 @@ ${JSON.stringify(currentSlide.content, null, 2)}
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Generate Layout Variants Button */}
-              {layoutVariants.length === 0 && !isGeneratingLayouts && (
+              {/* Conversion Warning UI - Shows when slide needs conversion */}
+              {needsConversion && (
+                <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg mb-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
+                    <div className="flex-1">
+                      <h4 className="font-medium text-yellow-900 mb-1">
+                        Convert to Dynamic Template
+                      </h4>
+                      <p className="text-sm text-yellow-700 mb-2">
+                        Layout variants require a dynamic template. This will capture the current
+                        layout and enable customization. The panel will close during conversion.
+                      </p>
+                      <p className="text-xs text-yellow-600 mb-3 font-semibold">
+                        ⚠️ Once converted, this slide will permanently use dynamic HTML rendering.
+                      </p>
+                      <Button
+                        onClick={handleConvertToDynamic}
+                        disabled={isConverting || !selectedBlock?.element}
+                        size="sm"
+                        className="bg-yellow-600 hover:bg-yellow-700 text-white"
+                      >
+                        {isConverting ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Converting...
+                          </>
+                        ) : (
+                          <>
+                            <Wand2 className="w-4 h-4 mr-2" />
+                            Convert to Dynamic
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Generate Layout Variants Button - Only show after conversion */}
+              {!needsConversion && layoutVariants.length === 0 && !isGeneratingLayouts && (
                 <div>
                   <p className="text-xs text-gray-600 mb-3">
                     Preview different layout arrangements before applying them
