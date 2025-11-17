@@ -7,6 +7,8 @@ import { PresentationGenerationApi } from "../../services/api/presentation-gener
 import { toast } from "sonner";
 import { useDispatch, useSelector } from "react-redux";
 import { updateSlide } from "@/store/slices/presentationGeneration";
+import { parseHtmlStructure } from "../../utils/htmlParser";
+import DynamicHtmlLayout from "@/../../presentation-templates/dynamic/DynamicHtmlLayout";
 import { RootState } from "@/store/store";
 import { BlockSelection } from "../hooks/useBlockSelection";
 import html2canvas from "html2canvas";
@@ -1862,19 +1864,27 @@ ${JSON.stringify(currentSlide.content, null, 2)}
                     </Button>
                   </div>
                   <div className="space-y-4">
-                    {layoutVariants.map((variant, index) => (
-                      <LayoutVariantCard
-                        key={variant.id}
-                        variant={variant}
-                        index={index}
-                        isApplying={applyingId === variant.id}
-                        isApplied={appliedLayouts.has(variant.id)}
-                        isCurrentlyApplied={currentlyAppliedIndex === index}
-                        onApply={() => applyLayoutVariant(variant, index)}
-                        selectedBlock={selectedBlock}
-                        slideId={slideId}
-                      />
-                    ))}
+                    {layoutVariants.map((variant, index) => {
+                      // Get current slide data for live icon/data resolution
+                      const currentSlide = slideIndex !== null && presentationData?.slides?.[slideIndex]
+                        ? presentationData.slides[slideIndex]
+                        : null;
+
+                      return (
+                        <LayoutVariantCard
+                          key={variant.id}
+                          variant={variant}
+                          index={index}
+                          isApplying={applyingId === variant.id}
+                          isApplied={appliedLayouts.has(variant.id)}
+                          isCurrentlyApplied={currentlyAppliedIndex === index}
+                          onApply={() => applyLayoutVariant(variant, index)}
+                          selectedBlock={selectedBlock}
+                          slideId={slideId}
+                          currentSlide={currentSlide}
+                        />
+                      );
+                    })}
                   </div>
 
                   {/* Restore Original Button - Show when a variant is applied */}
@@ -1969,6 +1979,7 @@ interface LayoutVariantCardProps {
   onApply: () => void;
   selectedBlock?: BlockSelection;
   slideId?: string | null;
+  currentSlide?: any;  // Current slide data from Redux for live icon/data resolution
 }
 
 const LayoutVariantCard: React.FC<LayoutVariantCardProps> = ({
@@ -1980,9 +1991,30 @@ const LayoutVariantCard: React.FC<LayoutVariantCardProps> = ({
   onApply,
   selectedBlock,
   slideId,
+  currentSlide,
 }) => {
-  // Simple and fast: just render the variant HTML directly
-  // No DOM cloning, no complex operations
+  // Parse variant HTML and render via DynamicHtmlLayout (same as thumbnails)
+  // This ensures proper icon rendering, Tailwind CSS, and live data resolution
+
+  const previewSlideData = React.useMemo(() => {
+    if (!variant.fullPreviewHTML || !currentSlide?.content) {
+      return null;
+    }
+
+    try {
+      // Parse the variant HTML into structured format
+      const structure = parseHtmlStructure(variant.fullPreviewHTML);
+
+      // Merge structure with LIVE slide data (for icons, text, etc.)
+      return {
+        ...currentSlide.content,
+        _html_structure: structure
+      };
+    } catch (error) {
+      console.error('[LayoutVariantCard] Error parsing variant HTML:', error);
+      return null;
+    }
+  }, [variant.fullPreviewHTML, currentSlide?.content]);
 
   return (
     <div className={`border rounded-lg overflow-hidden transition-colors ${
@@ -2007,32 +2039,26 @@ const LayoutVariantCard: React.FC<LayoutVariantCardProps> = ({
         )}
       </div>
 
-      {/* Visual Preview - Full slide with variant applied */}
+      {/* Visual Preview - Full slide with variant applied (same rendering as thumbnails) */}
       <div className="p-2 bg-gray-50">
         <div className="border border-gray-300 rounded overflow-hidden bg-white">
           {/* 16:9 aspect ratio container */}
-          <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
+          <div className="relative w-full aspect-video">
             <div className="absolute inset-0 overflow-hidden bg-gray-100">
-              {/* Scaled down full slide preview */}
-              <div
-                dangerouslySetInnerHTML={{ __html: variant.fullPreviewHTML || variant.html }}
-                className="pointer-events-none"
-                style={{
-                  transform: 'scale(0.25)',
-                  transformOrigin: 'top left',
-                  width: '400%',
-                  height: '400%',
-                }}
-              />
-              {/* Hide any selection outlines in preview */}
-              <style>{`
-                [class*="outline-yellow"],
-                [class*="ring-yellow"] {
-                  outline: none !important;
-                  box-shadow: none !important;
-                  ring-width: 0 !important;
-                }
-              `}</style>
+              {/* Scaled down preview using DynamicHtmlLayout (same as thumbnails) */}
+              <div className="transform scale-[0.2] origin-top-left w-[500%] h-[500%] pointer-events-none">
+                {previewSlideData ? (
+                  <DynamicHtmlLayout
+                    data={previewSlideData}
+                    slideIndex={0}
+                    isEditMode={false}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                    Preview unavailable
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
