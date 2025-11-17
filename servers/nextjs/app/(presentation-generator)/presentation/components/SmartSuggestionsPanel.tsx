@@ -79,6 +79,9 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
   // Block anchor - stable ID for matching blocks across variant applications
   const [selectedBlockAnchor, setSelectedBlockAnchor] = useState<string | null>(null);
 
+  // Re-selection flag - tracks if block needs to be re-selected after variant apply
+  const [needsReselection, setNeedsReselection] = useState(false);
+
   // Variant capability validation - tracks if selected block can use variants
   const [canUseVariants, setCanUseVariants] = useState(false);
 
@@ -215,6 +218,63 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
       console.log('========================================');
     }
   }, [selectedText, selectedBlock?.content, selectedBlock?.element, previousSelectedContent, previousBlockElement]);
+
+  // Re-select block after layout variant is applied
+  useEffect(() => {
+    if (needsReselection && selectedBlockAnchor && slideIndex !== null && presentationData?.slides) {
+      console.log('[Re-selection Effect] Triggered');
+      console.log('  selectedBlockAnchor:', selectedBlockAnchor);
+      console.log('  slideIndex:', slideIndex);
+
+      // Get the current slide (with potentially new ID)
+      const currentSlide = presentationData.slides[slideIndex];
+      if (!currentSlide) {
+        console.warn('[Re-selection Effect] Could not find slide at index:', slideIndex);
+        setNeedsReselection(false);
+        return;
+      }
+
+      const currentSlideId = currentSlide.id;
+      console.log('  currentSlideId (may be new):', currentSlideId);
+
+      // Wait for React to render the updated HTML
+      const timer = setTimeout(() => {
+        console.log('[Re-selection Effect] Querying for element with anchor:', selectedBlockAnchor);
+
+        // Query for the element within the current slide using the CURRENT slide ID
+        const slideContainer = document.querySelector(`[data-slide-id="${currentSlideId}"]`);
+        if (slideContainer) {
+          const newElement = slideContainer.querySelector(`[data-block-anchor="${selectedBlockAnchor}"]`) as HTMLElement;
+
+          if (newElement) {
+            console.log('[Re-selection Effect] Found element, re-applying selection');
+
+            // Remove old selection
+            document.querySelectorAll('.block-selected').forEach(el => {
+              el.classList.remove('block-selected');
+            });
+
+            // Apply selection to new element
+            newElement.classList.add('block-selected');
+
+            // Trigger a click to update selectedBlock state in useBlockSelection
+            newElement.click();
+
+            console.log('[Re-selection Effect] Selection re-applied successfully');
+          } else {
+            console.warn('[Re-selection Effect] Could not find element with anchor:', selectedBlockAnchor);
+          }
+        } else {
+          console.warn('[Re-selection Effect] Could not find slide container with ID:', currentSlideId);
+        }
+
+        // Clear the flag
+        setNeedsReselection(false);
+      }, 100); // 100ms delay to allow React render
+
+      return () => clearTimeout(timer);
+    }
+  }, [needsReselection, selectedBlockAnchor, slideIndex, presentationData?.slides]);
 
   const handleGenerateVariants = useCallback(async () => {
     const textToVariate = selectedText || selectedBlock?.content || '';
@@ -1523,6 +1583,10 @@ ${JSON.stringify(currentSlide.content, null, 2)}
       // Update state
       setCurrentlyAppliedIndex(variantIndex);
       setAppliedLayouts(new Set([variant.id]));
+
+      // Trigger re-selection after React renders the updated HTML
+      console.log('[applyLayoutVariant] Setting needsReselection flag');
+      setNeedsReselection(true);
 
       console.log('[applyLayoutVariant] SUCCESS - Layout variant applied');
       console.log('  Applied variant index:', variantIndex);
