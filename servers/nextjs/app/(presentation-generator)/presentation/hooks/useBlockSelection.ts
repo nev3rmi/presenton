@@ -260,6 +260,9 @@ export function useBlockSelection() {
         // SELECTOR 1f: Horizontal flex containers (list items)
         '[data-slide-id] div.flex.items-start[class*="space-x-"]',
 
+        // SELECTOR 1g: Divs with data-textpath (text content divs)
+        '[data-slide-id] div[data-textpath]',
+
         // NOTE: We don't select ALL divs anymore - too many elements causes performance issues
 
         // ===== TEST GROUP 2: TEXT ELEMENTS =====
@@ -367,7 +370,18 @@ export function useBlockSelection() {
 
         // Mark as processed
         element.setAttribute('data-block-selectable', 'true');
-        element.setAttribute('data-block-type', getBlockType(element));
+        const blockType = getBlockType(element);
+        element.setAttribute('data-block-type', blockType);
+
+        // Mark if block has anchor AND is a structural block (for variant capability)
+        // Only containers, columns, sections, etc. should be variant-capable
+        // Text blocks (text, paragraph, heading, span) should NOT be variant-capable
+        const hasAnchor = element.hasAttribute('data-block-anchor');
+        const isStructuralBlock = ['container', 'column', 'section', 'grid-container', 'list-container'].includes(blockType);
+
+        if (hasAnchor && isStructuralBlock) {
+          element.setAttribute('data-variant-capable', 'true');
+        }
 
         // Add hoverable class for CSS targeting
         element.classList.add('block-hoverable');
@@ -385,6 +399,7 @@ export function useBlockSelection() {
           element.classList.remove('block-hoverable', 'block-hovered', 'block-selected');
           element.removeAttribute('data-block-selectable');
           element.removeAttribute('data-block-type');
+          element.removeAttribute('data-variant-capable');
         };
 
         cleanupFunctionsRef.current.push(cleanup);
@@ -445,12 +460,21 @@ export function useBlockSelection() {
       });
     }
 
+    // Listen for manual re-initialization requests
+    const handleManualUpdate = () => {
+      console.log('[Block Selection] Manual update requested');
+      initializeBlocks();
+    };
+
+    window.addEventListener('blocks-need-update', handleManualUpdate);
+
     // Cleanup
     return () => {
       if (debounceTimer) {
         clearTimeout(debounceTimer);
       }
       observer.disconnect();
+      window.removeEventListener('blocks-need-update', handleManualUpdate);
       cleanupFunctionsRef.current.forEach(cleanup => cleanup());
       cleanupFunctionsRef.current = [];
     };

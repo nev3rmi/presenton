@@ -77,6 +77,9 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
   // Block anchor - stable ID for matching blocks across variant applications
   const [selectedBlockAnchor, setSelectedBlockAnchor] = useState<string | null>(null);
 
+  // Variant capability validation - tracks if selected block can use variants
+  const [canUseVariants, setCanUseVariants] = useState(false);
+
   const { presentationData } = useSelector(
     (state: RootState) => state.presentationGeneration
   );
@@ -116,6 +119,25 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
       setNeedsConversion(needsConvert);
     }
   }, [slideIndex, presentationData]);
+
+  // Validate if selected block can use variants (has anchor)
+  useEffect(() => {
+    if (!selectedBlock?.element) {
+      setCanUseVariants(false);
+      return;
+    }
+
+    const hasAnchor = selectedBlock.element.hasAttribute('data-block-anchor');
+    setCanUseVariants(hasAnchor);
+
+    if (!hasAnchor) {
+      console.log('[Variants] Block has no anchor, Variants tab will be disabled');
+      console.log('  Block type:', selectedBlock.type);
+    } else {
+      console.log('[Variants] Block has anchor, both tabs available');
+      console.log('  Anchor:', selectedBlock.element.getAttribute('data-block-anchor'));
+    }
+  }, [selectedBlock?.element]);
 
   // Detect when selection changes and regenerate variants
   useEffect(() => {
@@ -405,6 +427,50 @@ ${JSON.stringify(currentSlide.content, null, 2)}
       .replace(/\s+/g, ' ')  // Multiple spaces to single space
       .replace(/>\s+</g, '><')  // Remove spaces between tags
       .trim();
+  };
+
+  /**
+   * Clean runtime classes and attributes from HTML before saving to database
+   * These are added dynamically during rendering and should not be persisted
+   */
+  const cleanRuntimeAttributes = (container: HTMLElement): { classesRemoved: number; attributesRemoved: number } => {
+    const runtimeClasses = [
+      'block-hoverable',
+      'block-hovered',
+      'block-selected',
+      'outline-yellow-500',
+      'ring-2',
+      'ring-yellow-400',
+      'ring-offset-2'
+    ];
+
+    const runtimeAttributes = [
+      'data-variant-capable',
+      'data-block-id',
+    ];
+
+    let classesRemoved = 0;
+    let attributesRemoved = 0;
+
+    container.querySelectorAll('*').forEach(el => {
+      // Remove runtime classes
+      runtimeClasses.forEach(cls => {
+        if (el.classList.contains(cls)) {
+          el.classList.remove(cls);
+          classesRemoved++;
+        }
+      });
+
+      // Remove runtime attributes
+      runtimeAttributes.forEach(attr => {
+        if (el.hasAttribute(attr)) {
+          el.removeAttribute(attr);
+          attributesRemoved++;
+        }
+      });
+    });
+
+    return { classesRemoved, attributesRemoved };
   };
 
   // CONVERSION FUNCTION: Convert template slide to dynamic HTML mode
@@ -778,6 +844,11 @@ ${JSON.stringify(currentSlide.content, null, 2)}
 
       console.log('[Convert to Dynamic] Removed Tiptap from', tiptapRemoved, 'elements');
 
+      // Step 7.5: Clean runtime classes and attributes
+      console.log('[Convert to Dynamic] Step 7.5: Cleaning runtime classes and attributes');
+      const { classesRemoved, attributesRemoved } = cleanRuntimeAttributes(clonedElement);
+      console.log('[Convert to Dynamic] Cleaned', classesRemoved, 'runtime classes and', attributesRemoved, 'runtime attributes');
+
       // Step 8: Extract final HTML
       const html_content = clonedElement.innerHTML;
 
@@ -821,6 +892,13 @@ ${JSON.stringify(currentSlide.content, null, 2)}
       console.log('  No way back to template mode');
       console.log('  User can now select a block and click "Generate Layout Options"');
       console.log('========================================');
+
+      // Wait for React to re-render, then trigger block re-initialization
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      console.log('[Convert to Dynamic] Triggering block re-initialization');
+      const event = new CustomEvent('blocks-need-update');
+      window.dispatchEvent(event);
 
       // Hide loading overlay
       if (onConversionComplete) {
@@ -1245,6 +1323,11 @@ ${JSON.stringify(currentSlide.content, null, 2)}
       targetBlock.replaceWith(variantElement);
       console.log('[applyLayoutVariant] Block replaced successfully');
 
+      // Clean runtime classes and attributes before saving
+      console.log('[applyLayoutVariant] Cleaning runtime classes and attributes');
+      const { classesRemoved, attributesRemoved } = cleanRuntimeAttributes(tempDiv);
+      console.log('[applyLayoutVariant] Cleaned', classesRemoved, 'runtime classes and', attributesRemoved, 'runtime attributes');
+
       // Extract updated HTML
       const updatedHTML = tempDiv.innerHTML;
       console.log('[applyLayoutVariant] Extracted updated HTML');
@@ -1407,7 +1490,12 @@ ${JSON.stringify(currentSlide.content, null, 2)}
             <Wand2 className="w-4 h-4" />
             Suggestions
           </TabsTrigger>
-          <TabsTrigger value="variants" className="flex-1 gap-2" disabled={!selectedBlock?.element || applyingId !== null}>
+          <TabsTrigger
+            value="variants"
+            className="flex-1 gap-2"
+            disabled={!selectedBlock?.element || !(needsConversion || canUseVariants) || applyingId !== null}
+            title={!canUseVariants && selectedBlock?.element && !needsConversion ? "Select a container block (purple outline) for layout variants" : ""}
+          >
             <Palette className="w-4 h-4" />
             Variants
           </TabsTrigger>

@@ -117,11 +117,20 @@ body.block-selection-mode .block-hoverable {
 }
 
 /* Stronger outline when hovering in selection mode */
-body.block-selection-mode .block-hoverable:hover {
+/* Blue for normal blocks (no anchor) */
+body.block-selection-mode .block-hoverable:not([data-block-anchor]):hover {
   outline: 2px solid rgba(59, 130, 246, 0.8);
   outline-offset: 3px;
   background-color: rgba(59, 130, 246, 0.08);
   box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+}
+
+/* Purple for variant-capable blocks (has anchor) */
+body.block-selection-mode .block-hoverable[data-block-anchor]:hover {
+  outline: 2px solid rgba(168, 85, 247, 0.8);
+  outline-offset: 3px;
+  background-color: rgba(168, 85, 247, 0.08);
+  box-shadow: 0 2px 8px rgba(168, 85, 247, 0.15);
 }
 
 .block-hovered {
@@ -130,8 +139,8 @@ body.block-selection-mode .block-hoverable:hover {
   background-color: rgba(33, 150, 243, 0.08) !important;
 }
 
-/* Selected element - YELLOW highlight (persists even after Ctrl release) */
-.block-selected {
+/* Selected element - Yellow for normal blocks (no anchor) */
+.block-selected:not([data-block-anchor]) {
   outline: 4px solid #FFC107 !important;
   outline-offset: 3px;
   background-color: rgba(255, 193, 7, 0.2) !important;
@@ -142,11 +151,16 @@ body.block-selection-mode .block-hoverable:hover {
   position: relative !important;
 }
 
-/* Ensure selected element stays visible even when not in selection mode */
-.block-selected:not(body.block-selection-mode .block-selected) {
-  outline: 4px solid #FFC107 !important;
+/* Selected element - Purple solid for variant-capable blocks (has anchor) */
+.block-selected[data-block-anchor] {
+  outline: 4px solid #a855f7 !important;
   outline-offset: 3px;
-  background-color: rgba(255, 193, 7, 0.2) !important;
+  background-color: rgba(168, 85, 247, 0.2) !important;
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.3),
+              0 4px 12px rgba(168, 85, 247, 0.4) !important;
+  transition: all 0.2s ease !important;
+  z-index: 10 !important;
+  position: relative !important;
 }
 
 /* Animation for selection mode indicator */
