@@ -1199,6 +1199,36 @@ ${JSON.stringify(currentSlide.content, null, 2)}
         throw new Error("Variant HTML is empty or invalid");
       }
 
+      // CLEAN variant HTML before applying (remove Tiptap, selection classes)
+      console.log('[applyLayoutVariant] Cleaning variant HTML');
+
+      // Remove Tiptap wrappers from all text elements in variant
+      const variantTextElements = variantElement.querySelectorAll('[data-textpath]');
+      let tiptapRemovedFromVariant = 0;
+
+      variantTextElements.forEach(el => {
+        const htmlEl = el as HTMLElement;
+        const tiptapEditor = Array.from(htmlEl.children).find(
+          child => child.classList.contains('tiptap-text-editor')
+        );
+
+        if (tiptapEditor) {
+          const proseMirror = tiptapEditor.querySelector('.ProseMirror');
+          const textContent = proseMirror?.textContent || tiptapEditor.textContent || '';
+          tiptapEditor.replaceWith(document.createTextNode(textContent));
+          tiptapRemovedFromVariant++;
+        }
+      });
+
+      // Remove selection-related classes from all elements
+      variantElement.querySelectorAll('*').forEach(el => {
+        el.classList.remove('block-hoverable', 'block-selected', 'outline-yellow-500', 'ring-2', 'ring-yellow-400', 'ring-offset-2');
+      });
+
+      console.log('[applyLayoutVariant] Variant cleaned:');
+      console.log('  Tiptap removed from:', tiptapRemovedFromVariant, 'elements');
+      console.log('  Selection classes removed');
+
       // CRITICAL: Preserve the anchor in the variant element
       if (selectedBlockAnchor) {
         (variantElement as HTMLElement).setAttribute('data-block-anchor', selectedBlockAnchor);
