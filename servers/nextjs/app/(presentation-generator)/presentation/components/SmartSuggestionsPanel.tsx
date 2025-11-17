@@ -160,6 +160,18 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
     }
   }, [selectedBlock?.element, activeTab, needsConversion]);
 
+  // Cleanup when panel closes (component unmounts)
+  useEffect(() => {
+    return () => {
+      console.log('[SmartSuggestions] Panel closing - cleaning up state');
+      setLayoutVariants([]);
+      setRegeneratedSlides([]);
+      setCurrentlyAppliedIndex(null);
+      setAppliedLayouts(new Set());
+      // Keep originalLayoutSlideContent for restore functionality
+    };
+  }, []);
+
   // Detect when selection changes and regenerate variants
   useEffect(() => {
     const currentContent = selectedText || selectedBlock?.content || '';
@@ -1505,20 +1517,6 @@ ${JSON.stringify(currentSlide.content, null, 2)}
     }
   };
 
-  const handleSaveAndClose = () => {
-    // Clear variants from memory
-    setLayoutVariants([]);
-    setRegeneratedSlides([]);
-    setCurrentlyAppliedIndex(null);
-    setAppliedLayouts(new Set());
-    setOriginalLayoutSlideContent(null);
-
-    // Close panel
-    onClose();
-
-    toast.success("Layout saved!");
-    // Auto-save will persist to database automatically
-  };
 
   const handleRestoreOriginalLayout = async () => {
     console.log('========================================');
@@ -1890,22 +1888,6 @@ ${JSON.stringify(currentSlide.content, null, 2)}
                         disabled={applyingId !== null}
                       >
                         Restore Original
-                      </Button>
-                    </div>
-                  )}
-
-                  {/* Done Button - Show when a layout is applied */}
-                  {currentlyAppliedIndex !== null && (
-                    <div className="pt-4 mt-4 border-t border-gray-200 sticky bottom-0 bg-white">
-                      <Button
-                        onClick={handleSaveAndClose}
-                        className="w-full"
-                        size="lg"
-                        variant="default"
-                        disabled={applyingId !== null}
-                      >
-                        <CheckCircle2 className="w-4 h-4 mr-2" />
-                        Done - Save Layout
                       </Button>
                     </div>
                   )}
