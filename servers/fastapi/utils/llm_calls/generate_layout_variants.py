@@ -24,37 +24,52 @@ class LayoutVariants(BaseModel):
 
 
 def get_system_prompt() -> str:
-    return """You are an expert HTML/CSS layout designer specializing in presentation slides.
+    return """You are a creative presentation designer with expertise in modern web design and visual communication.
 
-Your task is to generate alternative layout variations for selected HTML blocks while maintaining:
-- Visual hierarchy and readability
-- Responsive design principles
-- Professional presentation aesthetics
-- Content integrity (don't change the text)
-- Proper sizing within available space
+Think like a professional designer working at a top design agency. Your goal is to create visually striking, innovative layout alternatives that elevate the presentation's impact.
 
-**CRITICAL CONTEXT AWARENESS**:
-- You will receive the FULL SLIDE HTML for context (colors, theme, spacing patterns)
-- You will receive PARENT CONTAINER information (width, layout constraints)
-- You will receive AVAILABLE DIMENSIONS (how much space this block has)
-- Your layouts MUST fit within the available space
-- Use the full slide context to match the overall design aesthetic
+**Your Creative Mission**:
+- Transform layouts with bold, confident design decisions
+- Create visual interest through creative spacing, alignment, and flow
+- Balance aesthetics with readability and hierarchy
+- Design layouts that make the content more engaging and memorable
+- Don't just rearrange - reimagine how the content can be presented
 
-**Layout Changes to Focus On**:
-- Column arrangements (2-col ↔ 3-col ↔ single col)
-- Grid layouts (2x2, 3x3, flex-wrap) - BUT only if space allows
-- List presentations (vertical, horizontal, grid)
-- Spacing and alignment variations
-- Container arrangements
+**Design Principles to Apply**:
+- Visual rhythm and flow (use varied spacing for emphasis)
+- White space as a design element (generous spacing creates elegance)
+- Asymmetry for visual interest (not everything needs to be centered)
+- Hierarchy through scale, spacing, and positioning
+- Grid systems for structure (but break the grid when it serves the design)
 
-**SIZING RULES**:
-- If available width is < 300px: Use single column layouts only
-- If available width is 300-600px: Max 2 columns
-- If available width is > 600px: Up to 3 columns allowed
-- Always ensure content doesn't overflow
-- Grid columns should have minimum 150px width each
+**Technical Context You'll Receive**:
+- FULL SLIDE HTML for understanding the overall design language
+- PARENT CONTAINER constraints for layout boundaries
+- AVAILABLE DIMENSIONS (your canvas size)
+- Block type and current structure
 
-Return ONLY the modified HTML for the selected block, not the entire slide."""
+**Creative Layout Transformations**:
+- Column arrangements: single focused column → multi-column grids → asymmetric layouts
+- Grid systems: equal grids → featured grid (larger hero items) → masonry-style
+- List presentations: vertical stacks → horizontal flows → card grids → timeline layouts
+- Spacing variations: tight compact → generous airy → rhythmic varied
+- Container arrangements: nested groups → flat hierarchies → layered compositions
+
+**Sizing Guidelines** (respect these for technical feasibility):
+- Width < 300px: Single column only (but make it beautiful!)
+- Width 300-600px: Up to 2 columns (or creative asymmetric layouts)
+- Width > 600px: Up to 3 columns (or bold featured layouts)
+- Grid columns need minimum 150px each
+- Content must fit without overflow
+
+**CRITICAL**:
+- Maintain exact text content (never modify the words)
+- Preserve all existing Tailwind classes on child elements
+- Return ONLY the modified block HTML (not the entire slide)
+- Your changes should focus on the outer container's layout classes
+- Match the slide's color scheme and design aesthetic
+
+Be bold. Be creative. Make it beautiful."""
 
 
 def get_user_prompt(
@@ -64,6 +79,7 @@ def get_user_prompt(
     available_width: int,
     available_height: int,
     parent_container_info: Optional[str] = None,
+    variant_count: int = 3,
 ) -> str:
     layout_suggestions = {
         "grid-container": [
@@ -72,9 +88,9 @@ def get_user_prompt(
             "4-column grid layout for compact display",
         ],
         "column": [
-            "Single centered column for focused content",
-            "Two-column layout with 60-40 split",
-            "Three-column layout with equal distribution",
+            "Asymmetric spacing with dramatic top/bottom margins for visual impact",
+            "Compact tight vertical stack for efficiency (minimal spacing)",
+            "Airy generous spacing with rhythmic gaps for elegance and breathing room",
         ],
         "list-container": [
             "Vertical list with generous spacing (space-y-6 or space-y-8)",
@@ -152,44 +168,51 @@ For HORIZONTAL LAYOUT (Option 3):
     # Typical slides are 10-30KB (2500-7500 tokens) which is acceptable
     slide_context_note = f"\n\n**Full Slide HTML Context** (for understanding colors, themes, and overall layout):\n```html\n{full_slide_html}\n```" if full_slide_html else ""
 
-    return f"""Generate 3 layout variants for this HTML block.
+    return f"""Design {variant_count} creative layout variant{'s' if variant_count > 1 else ''} for this content block. Think like a presentation designer, not a developer.
 
-**CONTEXT**: You will see the complete slide HTML to understand the overall theme, colors, and layout context.
+**Your Design Canvas**:
+- Type: {block_type}
+- Available Space: {available_width}px × {available_height}px{parent_info_text}
+- Maximum columns possible: {min(3, available_width // 150)} (based on 150px minimum per column)
 
-**Block Type**: {block_type}
-
-**Available Space**:
-- Width: {available_width}px
-- Height: {available_height}px{parent_info_text}
-
-**Selected Block HTML** (to transform):
+**Content to Transform**:
 ```html
 {html}
 ```
 {slide_context_note}
 
-**Required Variants**:
-1. {suggestions[0]}
-2. {suggestions[1]}
-3. {suggestions[2] if len(suggestions) > 2 else "Creative alternative layout"}
+**Design Direction** (use as inspiration, not rigid requirements):
+{chr(10).join(f"{i+1}. {suggestions[i]}" if i < len(suggestions) else f"{i+1}. Your creative alternative - surprise us!" for i in range(variant_count))}
 {examples}
 
-For each variant provide:
-- **title**: Short name (e.g., "2-Column Grid", "Vertical List", "Horizontal Flex")
-- **description**: Brief explanation of the layout change (mention the CSS classes used)
-- **html**: The complete modified HTML with ONLY the selected block changed
+**What to Deliver**:
+For each variant, provide:
+- **title**: Descriptive name that conveys the design concept (e.g., "Airy Grid", "Timeline Flow", "Featured Hero")
+- **description**: Explain the design decision and visual impact (not just CSS classes)
+- **html**: The transformed block HTML with your layout changes applied
 
-**CRITICAL RULES**:
-1. **USE THE FULL SLIDE CONTEXT** to match colors, spacing patterns, and design theme
-2. **RESPECT THE AVAILABLE WIDTH ({available_width}px)** - layouts must fit
-3. Keep the EXACT SAME content (text, images, icons) - DO NOT modify any text
-4. Keep all existing Tailwind classes on child elements (colors, padding, text styles, etc.)
-5. ONLY change the OUTER container's layout classes (flex, grid, space-y, etc.)
-6. For grid layout: Each column needs minimum 150px, so with {available_width}px width, use maximum {min(3, available_width // 150)} columns
-7. For flex row, USE: "flex flex-row gap-4" or "flex flex-wrap gap-4"
-8. For vertical list, USE: "space-y-6" or "space-y-8" (increase spacing only)
-9. DO NOT add new HTML elements except the outer container
-10. Return ONLY the modified block HTML, nothing more"""
+**Design Guidelines**:
+✓ Study the full slide context - match its visual language and color palette
+✓ Respect the available width ({available_width}px) - designs must be technically feasible
+✓ Preserve ALL text content exactly - never modify the words themselves
+✓ Keep child element classes intact (colors, fonts, padding, borders, etc.)
+✓ Focus your creativity on the container's layout system (flexbox, grid, spacing)
+✓ Use Tailwind utility classes for consistency with the existing codebase
+
+**Creative Freedom**:
+- Experiment with spacing rhythms (space-y-4, space-y-8, gap-6, gap-12)
+- Try asymmetric layouts when appropriate (not everything needs perfect balance)
+- Use generous white space for elegance
+- Create visual hierarchy through spacing and grouping
+- Think about flow - how the eye moves through the content
+
+**Technical Requirements**:
+- Grid columns must be at least 150px wide
+- Use Tailwind classes only (flex, grid, space-y, gap-, etc.)
+- Return ONLY the modified block HTML (not the entire slide)
+- Preserve any data-block-anchor attributes if present
+
+Be creative. Make design choices that elevate the presentation. Show us three distinctly different approaches."""
 
 
 def generate_static_variants(html: str, block_type: str, available_width: int, variant_count: int = 3) -> List[LayoutVariant]:
@@ -389,7 +412,7 @@ async def generate_layout_variants(
         List of LayoutVariant objects with title, description, and modified HTML
     """
     # DEBUG FLAG: Set to True to use static variants for testing
-    USE_STATIC_VARIANTS = True
+    USE_STATIC_VARIANTS = False
 
     if USE_STATIC_VARIANTS:
         print("[Layout Variants] Using STATIC variants (AI disabled for testing)")
@@ -416,7 +439,8 @@ async def generate_layout_variants(
             block_type,
             available_width,
             available_height,
-            parent_container_info
+            parent_container_info,
+            variant_count
         )
 
         print(f"  - Final prompt length: {len(user_prompt)} chars (~{len(user_prompt)//4} tokens)")

@@ -1063,7 +1063,7 @@ ${JSON.stringify(currentSlide.content, null, 2)}
       console.log('  availableWidth:', availableWidth);
       console.log('  availableHeight:', availableHeight);
       console.log('  parentContainerInfo:', parentContainerInfo);
-      console.log('  count: 3');
+      console.log('  count: 1');
 
       const response = await PresentationGenerationApi.generateLayoutVariants(
         blockHTML,
@@ -1072,53 +1072,113 @@ ${JSON.stringify(currentSlide.content, null, 2)}
         availableWidth,
         availableHeight,
         parentContainerInfo,
-        3
+        1
       );
       console.log('[handleGenerateLayoutVariants] API call succeeded');
+      console.log('[handleGenerateLayoutVariants] Full API response:', JSON.stringify(response, null, 2));
 
       if (response && response.variants) {
         console.log('[handleGenerateLayoutVariants] Generated', response.variants.length, 'variants');
+
+        // Log each variant details
+        response.variants.forEach((v: any, i: number) => {
+          console.log(`[handleGenerateLayoutVariants] Variant ${i}:`, {
+            title: v.title,
+            description: v.description,
+            html_length: v.html?.length,
+            html_preview: v.html?.substring(0, 200)
+          });
+        });
         // Use the ORIGINAL fullSlideHTML for preview generation (not cleaned)
         const variantsWithIds = response.variants.map((variant: any, index: number) => {
           // Generate full preview HTML by replacing the original block with the variant
           let fullPreviewHTML = '';
           if (fullSlideHTMLForPreview && blockElement) {
-            // Get the original (uncleaned) block HTML for replacement
-            const originalBlockHTML = blockElement.outerHTML;
-
-            // Debug: Log what we're working with
-            console.log(`[SmartSuggestions] Variant ${index}:`);
-            console.log('  - Original block HTML (first 200 chars):', originalBlockHTML.substring(0, 200));
+            console.log(`[SmartSuggestions] Generating preview for Variant ${index}:`);
+            console.log('  - Variant title:', variant.title);
             console.log('  - Variant HTML (first 200 chars):', variant.html.substring(0, 200));
-            console.log('  - Full slide HTML length:', fullSlideHTMLForPreview.length);
 
-            // Simple string replacement - fast and efficient!
-            fullPreviewHTML = fullSlideHTMLForPreview.replace(originalBlockHTML, variant.html);
+            // Use DOM-based replacement for reliability
+            const previewContainer = document.createElement('div');
+            previewContainer.innerHTML = fullSlideHTMLForPreview;
 
-            // Check if replacement worked
-            if (fullPreviewHTML === fullSlideHTMLForPreview) {
-              console.warn(`[SmartSuggestions] Variant ${index}: String replacement FAILED - HTML unchanged`);
-              console.warn('  Trying to find block in slide...');
-              console.warn('  Block outerHTML hash:', originalBlockHTML.length);
+            // Get the anchor from selected block (most reliable identifier)
+            const selectedBlockAnchor = blockElement.getAttribute('data-block-anchor');
 
-              // Try to find the block another way - by content matching
-              // Just use the variant HTML wrapped in the slide structure
-              fullPreviewHTML = fullSlideHTMLForPreview; // Keep original for now
+            let targetBlock: HTMLElement | null = null;
+
+            // Try anchor-based matching first (most reliable)
+            if (selectedBlockAnchor) {
+              targetBlock = previewContainer.querySelector(`[data-block-anchor="${selectedBlockAnchor}"]`);
+              console.log('  - Using anchor matching:', selectedBlockAnchor, '→', targetBlock ? 'Found' : 'Not found');
+            }
+
+            // Fallback: Try to find by block type + class matching
+            if (!targetBlock) {
+              const blockType = blockElement.getAttribute('data-block-type');
+              if (blockType) {
+                const candidates = previewContainer.querySelectorAll(`[data-block-type="${blockType}"]`);
+                // Find best match by comparing classes
+                let bestMatch: HTMLElement | null = null;
+                let bestScore = 0;
+                const originalClasses = Array.from(blockElement.classList);
+
+                candidates.forEach((candidate) => {
+                  const candidateClasses = Array.from(candidate.classList);
+                  const matchCount = originalClasses.filter(c => candidateClasses.includes(c)).length;
+                  if (matchCount > bestScore) {
+                    bestScore = matchCount;
+                    bestMatch = candidate as HTMLElement;
+                  }
+                });
+
+                targetBlock = bestMatch;
+                console.log('  - Using type+class matching:', blockType, '→', targetBlock ? 'Found' : 'Not found');
+              }
+            }
+
+            // If we found the target block, replace it
+            if (targetBlock) {
+              const variantContainer = document.createElement('div');
+              variantContainer.innerHTML = variant.html;
+              const variantElement = variantContainer.firstElementChild as HTMLElement;
+
+              if (variantElement) {
+                targetBlock.replaceWith(variantElement);
+                fullPreviewHTML = previewContainer.innerHTML;
+                console.log('  ✓ Preview generated successfully:', fullPreviewHTML.length, 'chars');
+                console.log('  - Preview HTML (first 500 chars):', fullPreviewHTML.substring(0, 500));
+              } else {
+                console.warn('  ✗ Could not parse variant HTML');
+                fullPreviewHTML = fullSlideHTMLForPreview;
+              }
             } else {
-              console.log(`[SmartSuggestions] Variant ${index}: Preview generated successfully`, fullPreviewHTML.length, 'chars');
+              console.warn('  ✗ Could not find target block in preview - keeping original');
+              fullPreviewHTML = fullSlideHTMLForPreview;
             }
           } else {
             console.warn(`[SmartSuggestions] Variant ${index}: Missing fullSlideHTML or blockElement, using fallback`);
           }
 
-          return {
+          const result = {
             id: `layout-${index}`,
             title: variant.title,
             description: variant.description,
             html: variant.html,
             fullPreviewHTML: fullPreviewHTML || variant.html, // Fallback to just variant if full HTML unavailable
           };
+
+          console.log(`[SmartSuggestions] Variant ${index} final result:`, {
+            id: result.id,
+            title: result.title,
+            fullPreviewHTML_length: result.fullPreviewHTML?.length,
+            has_fullPreviewHTML: !!result.fullPreviewHTML
+          });
+
+          return result;
         });
+
+        console.log('[SmartSuggestions] Setting layoutVariants state with', variantsWithIds.length, 'variants');
         setLayoutVariants(variantsWithIds);
         toast.success(`${variantsWithIds.length} layout variants generated!`);
       }
@@ -1871,13 +1931,14 @@ const LayoutVariantCard: React.FC<LayoutVariantCardProps> = ({
         <div className="border border-gray-300 rounded overflow-hidden bg-white">
           {/* 16:9 aspect ratio container */}
           <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
-            <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+            <div className="absolute inset-0 overflow-hidden bg-gray-100">
               {/* Scaled down full slide preview */}
               <div
                 dangerouslySetInnerHTML={{ __html: variant.fullPreviewHTML || variant.html }}
-                className="pointer-events-none origin-top-left"
+                className="pointer-events-none"
                 style={{
                   transform: 'scale(0.25)',
+                  transformOrigin: 'top left',
                   width: '400%',
                   height: '400%',
                 }}
