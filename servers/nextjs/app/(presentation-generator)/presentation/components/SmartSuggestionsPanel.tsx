@@ -31,6 +31,7 @@ interface SmartSuggestionsPanelProps {
   slideId: string | null;
   slideIndex: number | null;
   selectedBlock?: BlockSelection;
+  setSelectedBlock?: (block: BlockSelection) => void;
   onClose: () => void;
   clearBlockSelection?: () => void;
   onConversionStart?: () => void;
@@ -42,6 +43,7 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
   slideId,
   slideIndex,
   selectedBlock,
+  setSelectedBlock,
   onClose,
   clearBlockSelection,
   onConversionStart,
@@ -54,6 +56,7 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
   // Track previous selection to detect changes
   const [previousSelectedContent, setPreviousSelectedContent] = useState<string>('');
   const [previousBlockElement, setPreviousBlockElement] = useState<HTMLElement | null>(null);
+  const [previousSelectedBlockAnchor, setPreviousSelectedBlockAnchor] = useState<string | null>(null);
 
   // Variants state
   const [variants, setVariants] = useState<Variant[]>([]);
@@ -181,16 +184,21 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
   useEffect(() => {
     const currentContent = selectedText || selectedBlock?.content || '';
     const currentElement = selectedBlock?.element || null;
+    const currentBlockAnchor = currentElement?.getAttribute('data-block-anchor') || null;
 
-    // Check if the selected content or block element changed
+    // Check if the selected content or block changed
     const contentChanged = currentContent !== previousSelectedContent;
     const elementChanged = currentElement !== previousBlockElement;
+    const blockAnchorChanged = currentBlockAnchor !== previousSelectedBlockAnchor;
 
     if (contentChanged || elementChanged) {
       console.log('========================================');
       console.log('[Selection Change Effect] TRIGGERED');
       console.log('  contentChanged:', contentChanged);
       console.log('  elementChanged:', elementChanged);
+      console.log('  blockAnchorChanged:', blockAnchorChanged);
+      console.log('  currentBlockAnchor:', currentBlockAnchor);
+      console.log('  previousBlockAnchor:', previousSelectedBlockAnchor);
 
       // Clear text variants when text selection changes
       if (contentChanged && currentContent) {
@@ -203,21 +211,25 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
         setAppliedVariants(new Set());
       }
 
-      // Clear layout variants when block selection changes
-      if (elementChanged && currentElement) {
-        console.log('[Selection Change] Clearing LAYOUT variants');
+      // Clear layout variants ONLY when block anchor actually changes (different block)
+      // Don't clear when element reference changes but anchor is same (re-selection after variant apply)
+      if (blockAnchorChanged && currentBlockAnchor) {
+        console.log('[Selection Change] Different block selected - Clearing LAYOUT variants');
         setLayoutVariants([]);
         setRegeneratedSlides([]);
         setCurrentlyAppliedIndex(null);
         setAppliedLayouts(new Set());
+      } else if (elementChanged && currentElement) {
+        console.log('[Selection Change] Same block re-selected - Keeping LAYOUT variants');
       }
 
       // Update tracking
       setPreviousSelectedContent(currentContent);
       setPreviousBlockElement(currentElement);
+      setPreviousSelectedBlockAnchor(currentBlockAnchor);
       console.log('========================================');
     }
-  }, [selectedText, selectedBlock?.content, selectedBlock?.element, previousSelectedContent, previousBlockElement]);
+  }, [selectedText, selectedBlock?.content, selectedBlock?.element, previousSelectedContent, previousBlockElement, previousSelectedBlockAnchor]);
 
   // Re-select block after layout variant is applied
   useEffect(() => {
@@ -257,8 +269,38 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
             // Apply selection to new element
             newElement.classList.add('block-selected');
 
-            // Trigger a click to update selectedBlock state in useBlockSelection
-            newElement.click();
+            // Add selectable attribute if missing (required for useBlockSelection)
+            if (!newElement.hasAttribute('data-block-selectable')) {
+              newElement.setAttribute('data-block-selectable', 'true');
+            }
+
+            // Directly update selectedBlock state (bypasses event system)
+            if (setSelectedBlock) {
+              // Helper function to get block type
+              const getBlockType = (element: HTMLElement): string => {
+                const tag = element.tagName.toLowerCase();
+                if (tag === 'div') {
+                  if (element.classList.contains('grid')) return 'grid-container';
+                  if (element.classList.contains('flex-1')) return 'column';
+                  if (element.className.includes('space-y-')) return 'list-container';
+                  return 'container';
+                }
+                return tag === 'p' ? 'paragraph' : tag.match(/^h[1-6]$/) ? 'heading' : 'block';
+              };
+
+              // Update state directly
+              setSelectedBlock({
+                element: newElement,
+                type: getBlockType(newElement),
+                content: newElement.textContent || '',
+                slideId: currentSlideId,
+                slideIndex: slideIndex,
+              });
+
+              console.log('[Re-selection Effect] Selection state updated directly');
+            } else {
+              console.warn('[Re-selection Effect] setSelectedBlock not available');
+            }
 
             console.log('[Re-selection Effect] Selection re-applied successfully');
           } else {
@@ -270,7 +312,7 @@ const SmartSuggestionsPanel: React.FC<SmartSuggestionsPanelProps> = ({
 
         // Clear the flag
         setNeedsReselection(false);
-      }, 100); // 100ms delay to allow React render
+      }, 200); // 200ms delay to allow React render and layout calculation
 
       return () => clearTimeout(timer);
     }

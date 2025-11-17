@@ -509,5 +509,6 @@ export function useBlockSelection() {
     hoveredBlock,
     hasBlockSelection: selectedBlock.element !== null,
     clearSelection,
+    setSelectedBlock, // Expose for programmatic selection updates
   };
 }

@@ -47,7 +47,7 @@ const PresentationPage: React.FC<PresentationPageProps> = ({
   const { selection, hasSelection, clearSelection } = useTextSelection();
 
   // Block selection hook
-  const { selectedBlock, hasBlockSelection, clearSelection: clearBlockSelection } = useBlockSelection();
+  const { selectedBlock, hasBlockSelection, clearSelection: clearBlockSelection, setSelectedBlock } = useBlockSelection();
 
   // Auto-open suggestions panel ONLY when block/structure is selected
   // Text selections inside TiptapText editors use their own BubbleMenu for formatting
@@ -329,6 +329,7 @@ const PresentationPage: React.FC<PresentationPageProps> = ({
               slideId={selection.slideId || selectedBlock.slideId}
               slideIndex={selection.slideIndex ?? selectedBlock.slideIndex}
               selectedBlock={selectedBlock}
+              setSelectedBlock={setSelectedBlock}
               clearBlockSelection={clearBlockSelection}
               onClose={() => {
                 setShowSuggestionsPanel(false);
